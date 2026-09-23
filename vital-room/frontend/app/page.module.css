@@ -1,0 +1,124 @@
+/* ===== 共通 ===== */
+.hidden { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; z-index: -1; }
+
+.lobbyWrap, .roomWrap {
+  min-height: 100vh;
+  background: #14151a;
+  color: #e9eaec;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+}
+
+/* ===== ロビー(同意画面) ===== */
+.lobbyWrap { display: flex; align-items: center; justify-content: center; padding: 24px; }
+.lobby {
+  width: 100%; max-width: 460px;
+  background: #1c1d24; border: 1px solid #2b2c34; border-radius: 14px;
+  padding: 28px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+.title { margin: 0 0 8px; font-size: 22px; }
+.lead { margin: 0 0 20px; font-size: 13.5px; line-height: 1.7; color: #b9bbc2; }
+.lead b { color: #e9eaec; }
+
+.field { display: block; margin-bottom: 16px; }
+.field > span { display: block; font-size: 12.5px; color: #9a9da5; margin-bottom: 6px; }
+.input {
+  width: 100%; padding: 10px 12px;
+  background: #14151a; border: 1px solid #33343d; border-radius: 8px;
+  color: #e9eaec; font-size: 14px; font-family: inherit;
+}
+.roomRow { display: flex; gap: 8px; }
+.roomRow .input { flex: 1 1 auto; letter-spacing: 2px; font-variant-numeric: tabular-nums; }
+.ghostBtn {
+  flex: 0 0 auto; padding: 0 14px; border-radius: 8px;
+  background: transparent; border: 1px solid #33343d; color: #b9bbc2;
+  font-size: 12.5px; cursor: pointer;
+}
+.ghostBtn:hover { background: rgba(255, 255, 255, 0.05); }
+
+.roleRow { display: flex; gap: 8px; }
+.roleBtn {
+  flex: 1 1 0; padding: 10px; border-radius: 8px;
+  background: #14151a; border: 1px solid #33343d; color: #cfd0d6;
+  font-size: 14px; cursor: pointer; transition: all 0.15s ease;
+}
+.roleOn { background: rgba(90, 140, 230, 0.18); border-color: #5a8ce6; color: #fff; }
+
+.consentBox { margin: 4px 0 20px; padding: 14px; background: #14151a; border: 1px solid #2b2c34; border-radius: 10px; }
+.consentText { margin: 0 0 12px; font-size: 12.5px; line-height: 1.7; color: #b9bbc2; }
+.consentText b { color: #e9eaec; }
+.consentCheck { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: #e9eaec; cursor: pointer; }
+.consentCheck input { margin-top: 2px; }
+
+.joinBtn {
+  width: 100%; padding: 12px; border: none; border-radius: 10px;
+  background: #3f7be6; color: #fff;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.joinBtn:disabled { background: #33343d; color: #7a7d85; cursor: not-allowed; }
+.joinBtn:not(:disabled):hover { background: #5a8ce6; }
+
+/* ===== ルーム ===== */
+.roomBar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px; background: #17181e; border-bottom: 1px solid #000;
+}
+.status { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: #d6d7dc; }
+.liveDot { width: 9px; height: 9px; border-radius: 50%; background: #5bd18b; animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.roomMeta { display: flex; align-items: center; gap: 14px; }
+.roomCode { font-size: 12.5px; color: #9a9da5; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+.leaveBtn {
+  padding: 7px 16px; border: none; border-radius: 8px;
+  background: #b3413f; color: #fff; font-size: 13px; cursor: pointer;
+}
+.leaveBtn:hover { background: #cc4b49; }
+
+.cards {
+  padding: 22px;
+  display: grid; gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-content: start;
+}
+
+.card {
+  background: #1c1d24; border: 1px solid #2b2c34; border-radius: 14px;
+  padding: 18px; min-height: 220px;
+}
+.cardSelf { border-color: #3f5a8e; box-shadow: 0 0 0 1px rgba(90, 140, 230, 0.25); }
+
+.cardHead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.roleBadge {
+  font-size: 11.5px; padding: 3px 9px; border-radius: 999px;
+  background: #2a2c36; color: #b9bbc2;
+}
+.cardName { font-size: 14.5px; font-weight: 600; color: #f0f1f4; }
+.chip {
+  margin-left: auto; font-size: 11.5px; padding: 3px 9px; border-radius: 999px;
+  background: rgba(224, 122, 91, 0.18); color: #ff9c7d;
+}
+
+.selfPreview {
+  width: 100%; height: 130px; object-fit: cover;
+  border-radius: 10px; background: #000; margin-bottom: 14px;
+  transform: scaleX(-1);
+}
+
+.bpmRow { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
+.bpmNum { font-size: 46px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; }
+.bpmUnit { font-size: 14px; color: #9a9da5; }
+
+.meterWrap { margin-bottom: 12px; }
+.meterHead { display: flex; justify-content: space-between; font-size: 12px; color: #9a9da5; margin-bottom: 5px; }
+.meterVal { color: #e9eaec; font-variant-numeric: tabular-nums; }
+.meterTrack { height: 8px; border-radius: 999px; background: #2a2c36; overflow: hidden; }
+.meterFill { height: 100%; border-radius: 999px; transition: width 0.6s ease, background 0.6s ease; }
+
+.subMetrics { display: flex; justify-content: space-between; font-size: 12px; color: #8a8d95; }
+
+.waiting { display: flex; flex-direction: column; align-items: center; justify-content: center; border-style: dashed; color: #9a9da5; }
+.waitText { font-size: 15px; margin-bottom: 6px; }
+.waitSub { font-size: 12.5px; color: #7a7d85; text-align: center; }
+
+@media (max-width: 560px) {
+  .cards { grid-template-columns: 1fr; }
+}

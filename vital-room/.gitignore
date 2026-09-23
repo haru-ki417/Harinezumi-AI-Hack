@@ -1,0 +1,21 @@
+# === Python (backend) ===
+backend/.venv/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# === Node / Next.js (frontend) ===
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+*.tsbuildinfo
+
+# === misc ===
+.DS_Store
+*.pem
+.env*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -1,0 +1,20 @@
+[project]
+name = "stealth-vital-api"
+version = "2.0.0"
+description = "rPPG-based non-contact vital estimation backend (FastAPI)"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = false
+disallow_untyped_defs = false
+check_untyped_defs = true

@@ -1,0 +1,22 @@
+# Stealth Vital — バック(:8000) + フロント(:3000) を一括起動
+#   docker compose up --build
+#
+# ブラウザ(ホスト)からは http://localhost:3000 を開く。
+# フロントはブラウザ経由で http://localhost:8000 のバックを叩くため、
+# コンテナ間DNSは不要(どちらもホストのlocalhostに公開)。
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - STEALTH_VITAL_CORS_ORIGIN=http://localhost:3000
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
