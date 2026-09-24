@@ -115,10 +115,45 @@
 
 .subMetrics { display: flex; justify-content: space-between; font-size: 12px; color: #8a8d95; }
 
+.spark { margin: 4px 0 12px; }
+
 .waiting { display: flex; flex-direction: column; align-items: center; justify-content: center; border-style: dashed; color: #9a9da5; }
 .waitText { font-size: 15px; margin-bottom: 6px; }
 .waitSub { font-size: 12.5px; color: #7a7d85; text-align: center; }
 
+/* ===== レポートボタン ===== */
+.reportBtn {
+  padding: 7px 16px; border: 1px solid #33343d; border-radius: 8px;
+  background: transparent; color: #cfd0d6; font-size: 13px; cursor: pointer;
+}
+.reportBtn:hover { background: rgba(255, 255, 255, 0.06); }
+
+/* ===== トピックバー ===== */
+.topicBar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  padding: 10px 18px; background: #191a20; border-bottom: 1px solid #000;
+}
+.topicLabel { font-size: 12px; color: #9a9da5; }
+.topicNow { font-size: 14px; font-weight: 600; color: #ffd08a; }
+.topicControls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-left: 8px; }
+.topicChip {
+  font-size: 12px; padding: 4px 10px; border-radius: 999px;
+  background: #23242c; border: 1px solid #33343d; color: #cfd0d6; cursor: pointer;
+}
+.topicChip:hover { background: #2c2e38; }
+.topicChipOn { background: rgba(90, 140, 230, 0.22); border-color: #5a8ce6; color: #fff; }
+.topicInput {
+  font-size: 12.5px; padding: 5px 10px; border-radius: 8px;
+  background: #14151a; border: 1px solid #33343d; color: #e9eaec; width: 150px;
+}
+
+/* ===== 共有タイムライン ===== */
+.timeline { margin: 6px 18px 22px; background: #1c1d24; border: 1px solid #2b2c34; border-radius: 12px; padding: 14px 16px; }
+.timelineHead { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: #b9bbc2; margin-bottom: 8px; }
+.timelineTopic { color: #9a9da5; }
+.timelineHint { font-size: 11px; color: #7a7d85; margin-top: 6px; }
+
 @media (max-width: 560px) {
   .cards { grid-template-columns: 1fr; }
+  .topicInput { width: 110px; }
 }

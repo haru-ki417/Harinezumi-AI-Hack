@@ -44,8 +44,21 @@ def test_leave_cleanup():
     print("   OK")
 
 
+def test_topic_share():
+    print("\n[R4] トピック共有: 設定→取得、空室で破棄")
+    rm = RoomManager()
+    rm.join("t", "a", "interviewer", "面接官", True)
+    assert rm.get_topic("t") == ""
+    rm.set_topic("t", "志望動機について")
+    assert rm.get_topic("t") == "志望動機について"
+    rm.leave("t", "a")                 # 空室 → トピックも破棄
+    assert rm.get_topic("t") == ""
+    print("   OK")
+
+
 if __name__ == "__main__":
     test_consent_required()
     test_two_party_snapshot()
     test_leave_cleanup()
+    test_topic_share()
     print("\n=== ルーム全テスト通過 ===")

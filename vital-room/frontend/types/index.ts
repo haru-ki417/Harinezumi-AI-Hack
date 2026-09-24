@@ -29,3 +29,19 @@ export interface Participant {
 }
 
 export type RoomConnection = 'idle' | 'connecting' | 'open' | 'error';
+
+/** 時系列サンプル(1参加者・1時点) */
+export interface Sample {
+  t: number; // epoch ms
+  bpm: number;
+  stress: number;
+  topic: string;
+}
+
+/** 論点別の緊張集計(レポート用) */
+export interface TopicStat {
+  topic: string;
+  avgStress: number;
+  peakStress: number;
+  samples: number;
+}

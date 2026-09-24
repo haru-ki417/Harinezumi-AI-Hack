@@ -15,18 +15,21 @@ export interface VitalRoom {
   connection: RoomConnection;
   selfId: string | null;
   participants: Participant[];
+  topic: string;
   sendFrame: (imageBase64: string) => void;
+  sendTopic: (topic: string) => void;
 }
 
 /**
  * 同意付き・透明な双方向ルームに接続する。
  * 参加時に consent:true を送り(サーバは同意が無ければ拒否)、
- * 自分のフレームを送信、全員のバイタルのスナップショットを受け取る。
+ * 自分のフレームを送信、全員のバイタルと現在のトピックを受け取る。
  */
 export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom {
   const [connection, setConnection] = useState<RoomConnection>('idle');
   const [selfId, setSelfId] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [topic, setTopic] = useState<string>('');
   const wsRef = useRef<WebSocket | null>(null);
   const pendingRef = useRef(0);
 
@@ -49,6 +52,7 @@ export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom
           } else if (m.type === 'room') {
             pendingRef.current = Math.max(0, pendingRef.current - 1);
             setParticipants(Array.isArray(m.participants) ? m.participants : []);
+            if (typeof m.topic === 'string') setTopic(m.topic);
           } else if (m.type === 'error') {
             setConnection('error');
           }
@@ -79,6 +83,7 @@ export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom
       wsRef.current = null;
       setParticipants([]);
       setSelfId(null);
+      setTopic('');
     };
   }, [active, roomId, role, name]);
 
@@ -95,5 +100,16 @@ export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom
     }
   }, []);
 
-  return { connection, selfId, participants, sendFrame };
+  const sendTopic = useCallback((t: string) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify({ type: 'topic', topic: t }));
+      } catch {
+        /* noop */
+      }
+    }
+  }, []);
+
+  return { connection, selfId, participants, topic, sendFrame, sendTopic };
 }

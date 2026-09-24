@@ -28,7 +28,17 @@ class Member:
 class RoomManager:
     def __init__(self) -> None:
         self._rooms: Dict[str, Dict[str, Member]] = {}
+        self._topics: Dict[str, str] = {}   # room_id -> 現在の話題/質問
         self._lock = threading.Lock()
+
+    def set_topic(self, room_id: str, topic: str) -> None:
+        with self._lock:
+            if room_id in self._rooms:
+                self._topics[room_id] = topic
+
+    def get_topic(self, room_id: str) -> str:
+        with self._lock:
+            return self._topics.get(room_id, "")
 
     def join(self, room_id: str, client_id: str, role: str,
              name: str, consent: bool) -> bool:
@@ -50,6 +60,7 @@ class RoomManager:
                 del room[client_id]
                 if not room:
                     del self._rooms[room_id]
+                    self._topics.pop(room_id, None)
 
     def update_vitals(self, room_id: str, client_id: str, vitals: dict) -> None:
         with self._lock:

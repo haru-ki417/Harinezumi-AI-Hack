@@ -1,0 +1,5 @@
+.wrap { width: 100%; }
+.svg { width: 100%; height: auto; display: block; background: #16171c; border-radius: 8px; }
+.legend { display: flex; gap: 14px; margin-top: 6px; font-size: 11.5px; color: #9a9da5; }
+.legendItem { display: inline-flex; align-items: center; gap: 5px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }

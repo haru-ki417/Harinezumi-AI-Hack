@@ -141,7 +141,11 @@ async def _broadcast(room_id: str, force: bool = False) -> None:
     if not force and (now - _last_bcast.get(room_id, 0.0)) < _BCAST_MIN_INTERVAL:
         return
     _last_bcast[room_id] = now
-    payload = {"type": "room", "participants": rooms.snapshot(room_id)}
+    payload = {
+        "type": "room",
+        "participants": rooms.snapshot(room_id),
+        "topic": rooms.get_topic(room_id),
+    }
     for cid, ws in list(_conns.get(room_id, {}).items()):
         try:
             await ws.send_json(payload)
@@ -179,6 +183,9 @@ async def ws_room(ws: WebSocket, room_id: str) -> None:
                 st = _vitals_for(client_id, msg.get("image_base64", ""))
                 rooms.update_vitals(room_id, client_id, st.as_dict())
                 await _broadcast(room_id)
+            elif msg.get("type") == "topic":
+                rooms.set_topic(room_id, str(msg.get("topic", ""))[:120])
+                await _broadcast(room_id, force=True)
             elif msg.get("type") == "leave":
                 break
     except WebSocketDisconnect:
