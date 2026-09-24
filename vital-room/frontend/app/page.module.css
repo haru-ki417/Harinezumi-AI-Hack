@@ -98,11 +98,73 @@
 }
 
 .selfPreview {
-  /* 映像の上下を切り取らず、顔全体を確認できる高さを確保する。 */
-  width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: contain;
+  width: 100%; height: 130px; object-fit: cover;
   border-radius: 10px; background: #000; margin-bottom: 14px;
   transform: scaleX(-1);
 }
+
+/* 映像 + 背景canvas を重ねる領域(アスペクト比4:3を保ち、顔全体が入る) */
+.mediaWrap {
+  position: relative; width: 100%; aspect-ratio: 4 / 3;
+  border-radius: 10px; overflow: hidden; background: #000; margin-bottom: 10px;
+}
+.mediaLayer {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; transform: scaleX(-1); /* 自撮りミラー・全体表示(切り取らない) */
+}
+.layerHidden { opacity: 0; pointer-events: none; }
+
+/* カメラ選択 */
+.camRow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.camLabel { font-size: 11.5px; color: #9a9da5; }
+.camSelect {
+  flex: 1 1 auto; min-width: 0; max-width: 100%;
+  font-size: 12.5px; padding: 6px 10px; border-radius: 8px;
+  background: #14151a; border: 1px solid #33343d; color: #e9eaec; cursor: pointer;
+}
+.camSelect:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* マイク入力レベルメーター */
+.levelTrack {
+  flex: 0 0 64px; height: 8px; border-radius: 5px;
+  background: #14151a; border: 1px solid #33343d; overflow: hidden;
+}
+.levelFill {
+  height: 100%; border-radius: 5px;
+  background: linear-gradient(90deg, #5ae6a1, #e6c15a 70%, #e65a5a);
+  transition: width 80ms linear;
+}
+/* スピーカーのテスト音ボタン */
+.testBtn {
+  flex: 0 0 auto; font-size: 12px; padding: 6px 12px; border-radius: 8px;
+  background: #23242c; border: 1px solid #33343d; color: #e9eaec; cursor: pointer;
+}
+.testBtn:hover { background: #2c2e38; }
+
+/* 背景コントロール(ボタン→メニュー展開) */
+.bgControls { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.bgToggle {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; padding: 6px 12px; border-radius: 8px;
+  background: #23242c; border: 1px solid #33343d; color: #e9eaec; cursor: pointer;
+}
+.bgToggle:hover { background: #2c2e38; }
+.caret { font-size: 9px; color: #9a9da5; }
+.bgMenu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+  min-width: 200px; padding: 6px;
+  background: #202128; border: 1px solid #3a3b44; border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.bgMenuItem {
+  text-align: left; width: 100%;
+  font-size: 13px; padding: 8px 10px; border-radius: 7px;
+  background: transparent; border: none; color: #d6d7dc; cursor: pointer;
+}
+.bgMenuItem:hover { background: rgba(255, 255, 255, 0.07); }
+.bgMenuItemOn { background: rgba(90, 140, 230, 0.20); color: #fff; }
+.bgNote { font-size: 11px; color: #8a8d95; }
 
 .bpmRow { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
 .bpmNum { font-size: 46px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; }
@@ -153,6 +215,39 @@
 .timelineHead { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: #b9bbc2; margin-bottom: 8px; }
 .timelineTopic { color: #9a9da5; }
 .timelineHint { font-size: 11px; color: #7a7d85; margin-top: 6px; }
+
+/* ===== 文字起こし ===== */
+.recBadge {
+  margin-left: 10px; font-size: 12px; color: #ff8a8a;
+  animation: pulse 2s ease-in-out infinite;
+}
+.sttControls { display: flex; align-items: center; gap: 8px; margin-left: 8px; }
+.sttToggle {
+  font-size: 12px; padding: 5px 12px; border-radius: 999px;
+  background: #23242c; border: 1px solid #33343d; color: #cfd0d6; cursor: pointer;
+}
+.sttToggle:hover { background: #2c2e38; }
+.sttOn { background: rgba(224, 122, 91, 0.22); border-color: #e07a5b; color: #fff; }
+.sttLang {
+  font-size: 12px; padding: 5px 8px; border-radius: 8px;
+  background: #14151a; border: 1px solid #33343d; color: #e9eaec; cursor: pointer;
+}
+
+.transcript { margin: 6px 18px 22px; background: #1c1d24; border: 1px solid #2b2c34; border-radius: 12px; padding: 14px 16px; }
+.transcriptHead { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #d6d7dc; margin-bottom: 10px; }
+.transcriptActions { display: flex; align-items: center; gap: 10px; }
+.sttNote { font-size: 11.5px; color: #e6a15a; }
+.dlBtn {
+  font-size: 12px; padding: 5px 12px; border-radius: 8px;
+  background: transparent; border: 1px solid #33343d; color: #cfd0d6; cursor: pointer;
+}
+.dlBtn:hover { background: rgba(255, 255, 255, 0.06); }
+.transcriptBody { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.transcriptEmpty { font-size: 13px; color: #9a9da5; margin: 0; }
+.line { display: flex; flex-direction: column; gap: 2px; }
+.lineWho { font-size: 11px; color: #8a8d95; }
+.lineText { font-size: 13.5px; color: #e9eaec; line-height: 1.5; }
+.transcriptHint { font-size: 11px; color: #7a7d85; margin-top: 10px; }
 
 @media (max-width: 560px) {
   .cards { grid-template-columns: 1fr; }

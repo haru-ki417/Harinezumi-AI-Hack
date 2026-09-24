@@ -56,9 +56,28 @@ def test_topic_share():
     print("   OK")
 
 
+def test_transcript():
+    print("\n[R5] 文字起こし: フラグ・ログ・役割取得")
+    rm = RoomManager()
+    rm.join("v", "i", "interviewer", "面接官", True)
+    rm.join("v", "c", "candidate", "就活生", True)
+    assert rm.get_transcribe("v") is False
+    assert rm.get_role("v", "i") == "interviewer"
+    rm.set_transcribe("v", True)
+    assert rm.get_transcribe("v") is True
+    rm.add_transcript("v", {"name": "就活生", "role": "candidate", "text": "よろしくお願いします"})
+    rm.add_transcript("v", {"name": "面接官", "role": "interviewer", "text": "志望動機を教えてください"})
+    log = rm.get_transcript("v")
+    assert len(log) == 2 and log[1]["text"].startswith("志望動機")
+    rm.leave("v", "i"); rm.leave("v", "c")   # 空室で破棄
+    assert rm.get_transcribe("v") is False and rm.get_transcript("v") == []
+    print("   OK")
+
+
 if __name__ == "__main__":
     test_consent_required()
     test_two_party_snapshot()
     test_leave_cleanup()
     test_topic_share()
+    test_transcript()
     print("\n=== ルーム全テスト通過 ===")

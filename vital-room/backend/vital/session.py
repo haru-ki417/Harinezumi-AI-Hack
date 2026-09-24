@@ -75,7 +75,7 @@ class ClientState:
 
         res = compute_pulse(times, rgb)
         if (res is None or res.bpm <= 0 or res.confidence < s.conf_min
-                or eff_fps < s.min_fps_for_hr):
+                or res.snr_db < s.snr_min_db or eff_fps < s.min_fps_for_hr):
             return self._state(False, eff_fps)
 
         # BPM 平滑化

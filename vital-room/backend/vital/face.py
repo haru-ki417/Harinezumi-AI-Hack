@@ -18,9 +18,18 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-_CASCADE = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
+# 顔検出は任意。壊れた/古い OpenCV ビルド(CascadeClassifier 非搭載など)でも
+# バックエンドが必ず起動できるよう、生成失敗時は _CASCADE=None にして
+# 中央領域フォールバックだけで rPPG を動かす。
+_CASCADE = None
+try:
+    _cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
+    if not _cascade.empty():
+        _CASCADE = _cascade
+except Exception:  # noqa: BLE001 - どんな失敗でも起動を止めない
+    _CASCADE = None
 
 RGB = Tuple[float, float, float]
 
@@ -74,10 +83,15 @@ def face_roi_rgb(img: Optional[np.ndarray]) -> Optional[RGB]:
     if img is None or img.size == 0:
         return None
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    faces = _CASCADE.detectMultiScale(
-        gray, scaleFactor=1.2, minNeighbors=5, minSize=(80, 80)
-    )
+    faces = []
+    if _CASCADE is not None:
+        try:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            faces = _CASCADE.detectMultiScale(
+                gray, scaleFactor=1.2, minNeighbors=5, minSize=(80, 80)
+            )
+        except Exception:  # noqa: BLE001 - 検出失敗時は中央フォールバックへ
+            faces = []
 
     if len(faces) > 0:
         x, y, w, h = max(faces, key=lambda f: f[2] * f[3])

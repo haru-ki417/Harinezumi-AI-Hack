@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Participant, RoomConnection, Role } from '@/types';
+import type { Participant, RoomConnection, Role, TranscriptSegment } from '@/types';
 
 const WS_BASE = 'ws://localhost:8000/ws/room';
 
@@ -16,8 +16,12 @@ export interface VitalRoom {
   selfId: string | null;
   participants: Participant[];
   topic: string;
+  transcribe: boolean;
+  transcript: TranscriptSegment[];
   sendFrame: (imageBase64: string) => void;
   sendTopic: (topic: string) => void;
+  sendTranscribe: (on: boolean) => void;
+  sendTranscript: (text: string) => void;
 }
 
 /**
@@ -30,8 +34,9 @@ export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom
   const [selfId, setSelfId] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [topic, setTopic] = useState<string>('');
+  const [transcribe, setTranscribe] = useState<boolean>(false);
+  const [transcript, setTranscript] = useState<TranscriptSegment[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
-  const pendingRef = useRef(0);
 
   useEffect(() => {
     if (!active || !roomId) return;
@@ -50,9 +55,14 @@ export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom
             setSelfId(m.client_id);
             setConnection('open');
           } else if (m.type === 'room') {
-            pendingRef.current = Math.max(0, pendingRef.current - 1);
             setParticipants(Array.isArray(m.participants) ? m.participants : []);
             if (typeof m.topic === 'string') setTopic(m.topic);
+            if (typeof m.transcribe === 'boolean') setTranscribe(m.transcribe);
+          } else if (m.type === 'transcript' && m.segment) {
+            setTranscript((prev) => {
+              const next = [...prev, m.segment as TranscriptSegment];
+              return next.length > 500 ? next.slice(next.length - 500) : next;
+            });
           } else if (m.type === 'error') {
             setConnection('error');
           }
@@ -84,32 +94,37 @@ export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom
       setParticipants([]);
       setSelfId(null);
       setTopic('');
+      setTranscribe(false);
+      setTranscript([]);
     };
   }, [active, roomId, role, name]);
 
   const sendFrame = useCallback((imageBase64: string) => {
     const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      if (pendingRef.current > 3) return;
-      try {
-        ws.send(JSON.stringify({ type: 'frame', image_base64: imageBase64 }));
-        pendingRef.current += 1;
-      } catch {
-        /* noop */
-      }
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // rPPGはできるだけ全フレームをサーバで処理したい(表示だけサーバ側で間引く)。
+    // 絞り込みは「ソケットに送信待ちが溜まりすぎた時だけ」にする。
+    if (ws.bufferedAmount > 1_000_000) return; // ~1MB以上滞留していたらスキップ
+    try {
+      ws.send(JSON.stringify({ type: 'frame', image_base64: imageBase64 }));
+    } catch {
+      /* noop */
     }
   }, []);
 
-  const sendTopic = useCallback((t: string) => {
+  const send = useCallback((obj: object) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(JSON.stringify({ type: 'topic', topic: t }));
-      } catch {
-        /* noop */
-      }
+      try { ws.send(JSON.stringify(obj)); } catch { /* noop */ }
     }
   }, []);
 
-  return { connection, selfId, participants, topic, sendFrame, sendTopic };
+  const sendTopic = useCallback((t: string) => send({ type: 'topic', topic: t }), [send]);
+  const sendTranscribe = useCallback((on: boolean) => send({ type: 'transcribe', on }), [send]);
+  const sendTranscript = useCallback((text: string) => send({ type: 'transcript', text }), [send]);
+
+  return {
+    connection, selfId, participants, topic, transcribe, transcript,
+    sendFrame, sendTopic, sendTranscribe, sendTranscript,
+  };
 }

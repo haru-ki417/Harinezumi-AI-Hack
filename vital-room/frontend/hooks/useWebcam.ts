@@ -14,8 +14,11 @@ interface UseWebcamResult {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   isActive: boolean;
   error: string | null;
-  start: () => Promise<void>;
+  /** 起動。deviceId を渡すとそのカメラで起動 */
+  start: (deviceId?: string) => Promise<void>;
   stop: () => void;
+  /** 起動中にカメラを切り替える(停止→指定カメラで再起動) */
+  switchCamera: (deviceId: string) => Promise<void>;
 }
 
 const DATA_URL_PREFIX = /^data:image\/jpeg;base64,/;
@@ -30,7 +33,6 @@ export function useWebcam({
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // コールバックの最新参照を保持（interval を張り直さないため）
   const onFrameRef = useRef(onFrame);
   useEffect(() => {
     onFrameRef.current = onFrame;
@@ -39,12 +41,10 @@ export function useWebcam({
   const [isActive, setIsActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /** 現在フレームを canvas に描画し、純粋な Base64 を返す */
   const captureFrame = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
-    // メタデータ未ロード時は黒フレームを避けてスキップ
     if (video.readyState < 2 || video.videoWidth === 0) return;
 
     canvas.width = video.videoWidth;
@@ -58,62 +58,78 @@ export function useWebcam({
     onFrameRef.current(base64);
   }, [quality]);
 
-  /** ストリーム・タイマーを完全停止（メモリリーク防止の要） */
+  /** ストリームだけ止める(切替時に使う。intervalは維持) */
+  const stopStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
+  /** 完全停止(タイマーも止める) */
   const stop = useCallback(() => {
     if (intervalRef.current !== null) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    stopStream();
+    if (videoRef.current) videoRef.current.srcObject = null;
     setIsActive(false);
-  }, []);
+  }, [stopStream]);
 
-  const start = useCallback(async () => {
-    setError(null);
-    if (streamRef.current) return; // 二重起動防止
+  const start = useCallback(
+    async (deviceId?: string) => {
+      setError(null);
+      stopStream(); // 既存があれば止めてから(切替対応)
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          // 解像度を抑えて 25fps 送信時のペイロード/CPUを軽くする
+      try {
+        const videoConstraints: MediaTrackConstraints = {
           width: { ideal: 480 },
           height: { ideal: 360 },
-          facingMode: 'user',
-        },
-        audio: false,
-      });
-      streamRef.current = stream;
+        };
+        if (deviceId) {
+          videoConstraints.deviceId = { exact: deviceId };
+        } else {
+          videoConstraints.facingMode = 'user';
+        }
 
-      const video = videoRef.current;
-      if (video) {
-        video.srcObject = stream;
-        // play() の失敗はユーザー操作待ちの場合があるため握りつぶす
-        await video.play().catch(() => undefined);
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: false,
+        });
+        streamRef.current = stream;
+
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          await video.play().catch(() => undefined);
+        }
+
+        setIsActive(true);
+        if (intervalRef.current === null) {
+          intervalRef.current = setInterval(captureFrame, intervalMs);
+        }
+      } catch (err) {
+        stopStream();
+        setError(err instanceof Error ? err.message : 'カメラの起動に失敗しました');
+        setIsActive(false);
       }
+    },
+    [captureFrame, intervalMs, stopStream],
+  );
 
-      setIsActive(true);
-      if (intervalRef.current === null) {
-        intervalRef.current = setInterval(captureFrame, intervalMs);
-      }
-    } catch (err) {
-      streamRef.current = null;
-      setError(err instanceof Error ? err.message : 'カメラの起動に失敗しました');
-      setIsActive(false);
-    }
-  }, [captureFrame, intervalMs]);
+  const switchCamera = useCallback(
+    async (deviceId: string) => {
+      await start(deviceId);
+    },
+    [start],
+  );
 
-  // アンマウント時に必ずクリーンアップ
   useEffect(() => {
     return () => {
       stop();
     };
   }, [stop]);
 
-  return { videoRef, canvasRef, isActive, error, start, stop };
+  return { videoRef, canvasRef, isActive, error, start, stop, switchCamera };
 }

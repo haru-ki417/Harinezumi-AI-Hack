@@ -31,16 +31,17 @@ def _get_s(name: str, default: str) -> str:
 @dataclass
 class Settings:
     # 解析
-    window_sec: float = 12.0        # 解析窓長(秒)
+    window_sec: float = 8.0         # 解析窓長(秒)。短いほど反応が速い
     min_samples: int = 8            # 解析を始める最小フレーム数
     min_fps_for_hr: float = 6.0     # これ未満の実効fpsではBPMを更新しない
-    conf_min: float = 0.15          # スペクトルピークの最小信頼度
-    bpm_smooth: float = 0.30        # BPMのEMA係数
+    conf_min: float = 0.40          # 信頼度(SNRシグモイド)の下限。ノイズ棄却
+    snr_min_db: float = 0.5         # 帯域内SNRの下限(これ未満は更新しない)
+    bpm_smooth: float = 0.45        # BPMのEMA係数(大きいほど追従が速い)
     rmssd_smooth: float = 0.30      # RMSSDのEMA係数
     # 異常/ストレス
     anom_history_sec: float = 60.0
-    anom_baseline_lag: float = 5.0
-    anom_min_baseline: int = 5
+    anom_baseline_lag: float = 3.0  # ベースライン確立までの遅延(短いほど早く出る)
+    anom_min_baseline: int = 3
     anom_delta_bpm: float = 12.0
     stress_anom_threshold: float = 55.0  # このストレス以上で異常
     # サーバ
@@ -51,15 +52,16 @@ class Settings:
 
 def load_settings() -> Settings:
     return Settings(
-        window_sec=_get_f("WINDOW_SEC", 12.0),
+        window_sec=_get_f("WINDOW_SEC", 8.0),
         min_samples=_get_i("MIN_SAMPLES", 8),
         min_fps_for_hr=_get_f("MIN_FPS_FOR_HR", 6.0),
-        conf_min=_get_f("CONF_MIN", 0.15),
-        bpm_smooth=_get_f("BPM_SMOOTH", 0.30),
+        conf_min=_get_f("CONF_MIN", 0.40),
+        snr_min_db=_get_f("SNR_MIN_DB", 0.5),
+        bpm_smooth=_get_f("BPM_SMOOTH", 0.45),
         rmssd_smooth=_get_f("RMSSD_SMOOTH", 0.30),
         anom_history_sec=_get_f("ANOM_HISTORY_SEC", 60.0),
-        anom_baseline_lag=_get_f("ANOM_BASELINE_LAG", 5.0),
-        anom_min_baseline=_get_i("ANOM_MIN_BASELINE", 5),
+        anom_baseline_lag=_get_f("ANOM_BASELINE_LAG", 3.0),
+        anom_min_baseline=_get_i("ANOM_MIN_BASELINE", 3),
         anom_delta_bpm=_get_f("ANOM_DELTA_BPM", 12.0),
         stress_anom_threshold=_get_f("STRESS_ANOM_THRESHOLD", 55.0),
         cors_origin=_get_s("CORS_ORIGIN", "http://localhost:3000"),

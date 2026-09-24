@@ -19,7 +19,7 @@ from scipy import signal
 FMIN = 0.7   # 42 BPM
 FMAX = 4.0   # 240 BPM
 TARGET_FPS = 30.0
-MIN_DURATION = 6.0
+MIN_DURATION = 3.0   # 最初のBPMが出るまでの待ち時間(短いほど反応が速い)
 
 
 @dataclass
@@ -103,9 +103,11 @@ def compute_pulse(times, rgb, fmin: float = FMIN, fmax: float = FMAX,
     pulse = signal.detrend(pulse, type="linear")
     pulse = _bandpass(pulse, fs, fmin, fmax)
 
+    # ゼロ詰めで周波数分解能を上げる(窓を伸ばさずにBPM精度を改善)。
+    nfft = int(2 ** np.ceil(np.log2(max(256, pulse.size * 4))))
     win = signal.windows.hann(pulse.size)
-    mag = np.abs(np.fft.rfft(pulse * win))
-    freqs = np.fft.rfftfreq(pulse.size, d=1.0 / fs)
+    mag = np.abs(np.fft.rfft(pulse * win, n=nfft))
+    freqs = np.fft.rfftfreq(nfft, d=1.0 / fs)
     band = (freqs >= fmin) & (freqs <= fmax)
     if not band.any():
         return None
@@ -114,14 +116,28 @@ def compute_pulse(times, rgb, fmin: float = FMIN, fmax: float = FMAX,
     band_freq = freqs[band]
     power = band_mag ** 2
     peak = int(np.argmax(power))
-    bpm = float(band_freq[peak] * 60.0)
 
-    total = power.sum() + 1e-9
-    confidence = float(power[peak] / total)
+    # 放物線補間でピーク周波数をサブビン精度に(BPMのガタつきを抑える)
+    f_peak = float(band_freq[peak])
+    if 0 < peak < power.size - 1:
+        y0, y1, y2 = power[peak - 1], power[peak], power[peak + 1]
+        denom = y0 - 2.0 * y1 + y2
+        if denom != 0.0:
+            delta = 0.5 * (y0 - y2) / denom
+            if -1.0 < delta < 1.0:
+                f_peak += delta * (band_freq[1] - band_freq[0])
+    bpm = float(f_peak * 60.0)
+
+    # 帯域内SNR: ピーク±0.2Hz の主ローブ vs それ以外(ノイズ)。
     sig_mask = np.abs(band_freq - band_freq[peak]) <= 0.2
-    sig = power[sig_mask].sum()
-    noise = power[~sig_mask].sum() + 1e-9
+    sig = float(power[sig_mask].sum())
+    noise = float(power[~sig_mask].sum()) + 1e-9
     snr_db = float(10.0 * np.log10(sig / noise))
+
+    # 信頼度: SNRをシグモイドで 0..1 に写像。実測で脈波がロックした状態
+    # (SNR~3dB以上)で 0.9+、ノイズだけ(SNR<0)では 0.3未満になるよう較正。
+    #   SNR  3dB -> 0.90 / 4dB -> 0.95 / -1.5dB(noise) -> 0.30
+    confidence = float(1.0 / (1.0 + np.exp(-(snr_db + 0.25) / 1.5)))
 
     return PulseResult(pulse=pulse, fs=fs, bpm=bpm,
                        confidence=confidence, snr_db=snr_db)
