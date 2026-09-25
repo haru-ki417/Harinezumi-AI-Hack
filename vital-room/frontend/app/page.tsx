@@ -215,7 +215,8 @@ export default function Home() {
 
   const canJoin = name.trim().length > 0 && roomId.trim().length > 0 && consent;
   const room = useVitalRoom({ roomId, role, name: name || '参加者', active: joined });
-  const chat = useRoomChat({ roomId, role, name: name.trim().slice(0, 40), active: canJoin });
+  const chatAvailable = joined && room.connection === 'open' && room.selfId !== null;
+  const chat = useRoomChat({ roomId, role, name: name.trim().slice(0, 40), active: chatAvailable });
 
   const camera = useWebcam({
     active: stage !== 'lobby' && cameraSettings.enabled,
@@ -370,7 +371,7 @@ export default function Home() {
     <header className={styles.toolbar} aria-label="ルーム操作">
       <Brand compact />
       <div className={styles.roomMeta}>
-        <RoomChat chat={chat} roomId={roomId} />
+        {chatAvailable && <RoomChat chat={chat} roomId={roomId} />}
         <span className={styles.roomCode} title={`ルーム ${roomId}`}>ルーム {roomId}</span>
         {joined ? (
           <>

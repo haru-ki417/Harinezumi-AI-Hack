@@ -178,7 +178,7 @@ export function DeviceSetup({ name, camera, settings, audio, onCameraChange, onA
           <section className={styles.settingsScroll} aria-label="設定項目" tabIndex={0}>
             <p className={styles.step}>ステップ 2 / 3 · 入室前の確認</p>
             <h1>カメラ・音声・背景の設定</h1>
-            <p className={styles.intro}>{name} さん、映り方と音声を確認してください。画面上部のチャットで相手と話せます。「面接に接続」を押すとバイタルの計測・共有を開始します。</p>
+            <p className={styles.intro}>{name} さん、映り方と音声を確認してください。「面接に接続」を押すとバイタルの計測・共有を開始し、入室が完了するとチャットも使えます。</p>
             {camera.loading && <p role="status">カメラの許可を確認しています…</p>}
             {camera.error && <div className={styles.error} role="alert">{camera.error}
               <button type="button" onClick={camera.retry}>カメラを再試行</button></div>}

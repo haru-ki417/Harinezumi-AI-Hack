@@ -5,21 +5,35 @@
 .widget .toggle { position: relative; display: flex; align-items: center; justify-content: center; width: 100px; height: 40px; padding: 8px 14px; font-size: 14px; font-weight: 600; background: #315eb0; box-shadow: 0 4px 16px #0006; }
 .badge { position: absolute; top: -8px; right: -8px; background: #ffe0a3; color: #30220a; border-radius: 20px; padding: 1px 7px; font-weight: 700; }
 .panel { position: absolute; top: 52px; left: 0; display: flex; flex-direction: column; width: min(380px, calc(100vw - 32px)); height: min(560px, calc(100vh - 84px)); height: min(560px, calc(100dvh - 84px)); border: 1px solid #454957; border-radius: 14px; background: #1c1d24; box-shadow: 0 10px 40px #0009; overflow: hidden; }
-.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; background: #232632; }
+.header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; background: #232632; }
 .header h2 { margin: 0 0 4px; font-size: 16px; }
 .header span { font-size: 11px; color: #b9bbc2; }
-.connection { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; color: #b9bbc2; font-size: 11px; }
-.log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px; }
+.connection { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: 8px 14px; color: #b9bbc2; font-size: 11px; }
+.log { flex: 1; min-height: 72px; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px; }
 .empty { color: #9a9da5; font-size: 13px; line-height: 1.7; }
 .message { margin: 0 24px 12px 0; padding: 10px 12px; border-radius: 10px; background: #2b2d38; overflow-wrap: anywhere; }
 .own { margin-left: 24px; margin-right: 0; background: #263d60; }
 .meta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: #c3cddd; }
 .meta time { flex-shrink: 0; }
 .message p { margin: 6px 0 0; white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
-.composer { padding: 12px 14px; border-top: 1px solid #373a46; }
+.composer { padding: 12px 14px; border-top: 1px solid #373a46; max-height: 56%; overflow-y: auto; overscroll-behavior: contain; }
 .composer label { display: block; margin-bottom: 6px; font-size: 12px; }
 .composer textarea { display: block; width: 100%; resize: none; border: 1px solid #454957; border-radius: 8px; padding: 8px; background: #14151a; color: #fff; font: inherit; font-size: 14px; }
 .sendRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
 .sendRow span { font-size: 10px; color: #a8acb8; }
 .error, .sendRow .error { color: #ffb8ac; font-size: 12px; }
+.hidden { display: none; }
+.dragging { outline: 3px solid #85afff; outline-offset: 2px; }
+.attachRow { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.fileHint { color: #b9bbc2; font-size: 10px; line-height: 1.5; }
+.composer > p.fileHint { margin: 8px 0 0; }
+.pending { list-style: none; padding: 0; margin: 0 0 10px; max-height: 130px; overflow-y: auto; }
+.pending li { display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 8px; background: #292d39; margin-bottom: 4px; }
+.pending li > button { flex-shrink: 0; padding: 5px 10px; }
+.fileName { flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; font-size: 12px; }
+.fileName small { display: block; color: #c3cddd; font-size: 10px; margin-top: 3px; }
+.thumbnail { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; }
+.attachment { margin-top: 8px; }
+.image { display: block; max-width: 100%; max-height: 180px; border-radius: 6px; object-fit: contain; }
+.widget .download { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 6px; padding: 8px; background: #172a4299; border-color: #536881; }
 @media (max-width: 760px) { .panel { width: min(380px, calc(100vw - 32px)); } }

@@ -71,19 +71,34 @@ BPMが安定して出るまで **起動後6〜12秒**（解析窓が埋まるま
 
 ### `WebSocket /ws/chat/{room_id}`
 
-面接前の機器設定画面から使えるテキストチャット。バイタル用の接続と独立しており、
+面接ルームへの入室完了後にフロントエンドが接続する、ファイル添付付きのチャット。バイタル用の接続と独立しており、
 この接続ではカメラ画像の送信や計測を開始しない。同じルームコードの参加者に配信する。
 
 - 接続直後: `{"type":"join","name":"表示名","role":"candidate","consent":true}`。role は `candidate` / `interviewer`。
-- 参加応答: `{"type":"chat_joined","client_id":"...","messages":[]}`。直近100件の履歴を含む。
-- 送信: `{"type":"chat","request_id":"送信ごとの一意なID","text":"こんにちは"}`。空白のみは不可、最大2000文字。
-- 受信: `{"type":"chat_message","message":{"id":"...","request_id":"...","sender_id":"...","name":"...","role":"candidate","text":"こんにちは","sent_at":"ISO日時"}}`。送信者にも返す。
+- 参加応答: `{"type":"chat_joined","client_id":"...","upload_token":"...","messages":[]}`。直近100件の履歴と、この接続専用の添付アクセス用トークンを含む。
+- 送信: `{"type":"chat","request_id":"送信ごとの一意なID","text":"こんにちは","attachment_ids":[]}`。本文は最大2000文字。添付がある場合は本文なしでも送れる。
+- 受信: `{"type":"chat_message","message":{"id":"...","request_id":"...","sender_id":"...","name":"...","role":"candidate","text":"こんにちは","attachments":[],"sent_at":"ISO日時"}}`。送信者にも返す。
 - エラー: `{"type":"chat_error","reason":"invalid_message"}`。送信者名・ID・日時はサーバーが設定する。
 
-履歴はメモリ上のみで、全員がチャットから退出するかサーバーを再起動すると消える。
+履歴と添付はメモリ上のみで、全員がチャットから退出するかサーバーを再起動すると消える。
 現状は単一プロセスで起動すること。複数ワーカー・複数サーバーに分散する場合は共有ストアと配信基盤が必要。
 
-`python -m unittest test_chat -v` で実サーバーを使った配信・ルーム分離・履歴・入力検証を確認できる。
+添付APIは、いずれも `Authorization: Bearer <upload_token>` が必要。トークンは発行したチャット接続が有効な間、そのルームでのみ使える。
+
+- `POST /api/chat/{room_id}/attachments`: ファイル本体をそのまま送信し、`X-Filename` に `encodeURIComponent(file.name)` を設定する。応答は HTTP 201 と `{"id":"...","name":"資料.pdf","size":123,"content_type":"application/pdf"}`。得られたIDをチャットの `attachment_ids` に含めて送信する。
+- `GET /api/chat/{room_id}/attachments/{id}`: 同じルームで投稿されたファイルを取得する。投稿前のファイルはアップロードした本人のみ取得できる。
+- `DELETE /api/chat/{room_id}/attachments/{id}`: 本人がアップロードした未送信ファイルを削除する。成功時は HTTP 204。送信済みファイルは履歴保護のため HTTP 409。
+
+1ファイル10 MiB、1メッセージ5件、ルーム全体50 MiB、サーバー全体200 MiBまで。
+空ファイルは拒否する。PNG/JPEG/GIF/WebP/PDF はファイルの先頭データで判定し、それ以外は
+`application/octet-stream` としてダウンロードする。指定された拡張子やMIMEだけでは画像として扱わない。
+履歴100件から外れたメッセージだけが参照するファイルは削除する。未送信ファイルは本人の退出時に削除し、
+10分経過したものは次の添付操作・送信時に削除する。アップロードは60秒で打ち切る。
+同時アップロードはサーバー全体16件、ファイル数は全体1000件、未送信ファイルは1接続20件まで。
+エラーは `{"detail":"file_too_large"}`（413）、`room_storage_full` / `storage_full`（507）、
+`invalid_file`（400/404）、`invalid_session`（401）、`too_many_attachments`（429）などを返す。
+
+`python -m unittest test_chat -v` で配信・ルーム分離・履歴・添付認証・容量制限・途中切断時の解放を確認できる。
 ブラウザとの結合テストは `../frontend` で `npm run test:chat` を実行する。
 新しいエンドポイントを反映するにはバックエンドを再起動すること。
 
