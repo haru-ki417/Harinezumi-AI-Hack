@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Connection, VitalResponse } from '@/types';
+import type { VitalResponse } from '@/types';
+
+type Connection = 'connecting' | 'ws' | 'rest';
 
 const WS_URL = 'ws://localhost:8000/ws/vital';
 const REST_URL = 'http://localhost:8000/api/vital';

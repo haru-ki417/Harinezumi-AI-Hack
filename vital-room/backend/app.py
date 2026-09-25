@@ -27,6 +27,7 @@ from typing import Dict
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from chat import router as chat_router
 
 from vital import (
     RoomManager,
@@ -53,6 +54,7 @@ manager = SessionManager(settings)
 rooms = RoomManager()
 
 app = FastAPI(title="Stealth Vital API", version="3.0.0")
+app.include_router(chat_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.cors_origin],

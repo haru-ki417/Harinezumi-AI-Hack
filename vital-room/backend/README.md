@@ -69,6 +69,27 @@ BPMが安定して出るまで **起動後6〜12秒**（解析窓が埋まるま
 
 ## API
 
+### `WebSocket /ws/chat/{room_id}`
+
+面接前の機器設定画面から使えるテキストチャット。バイタル用の接続と独立しており、
+この接続ではカメラ画像の送信や計測を開始しない。同じルームコードの参加者に配信する。
+
+- 接続直後: `{"type":"join","name":"表示名","role":"candidate","consent":true}`。role は `candidate` / `interviewer`。
+- 参加応答: `{"type":"chat_joined","client_id":"...","messages":[]}`。直近100件の履歴を含む。
+- 送信: `{"type":"chat","request_id":"送信ごとの一意なID","text":"こんにちは"}`。空白のみは不可、最大2000文字。
+- 受信: `{"type":"chat_message","message":{"id":"...","request_id":"...","sender_id":"...","name":"...","role":"candidate","text":"こんにちは","sent_at":"ISO日時"}}`。送信者にも返す。
+- エラー: `{"type":"chat_error","reason":"invalid_message"}`。送信者名・ID・日時はサーバーが設定する。
+
+履歴はメモリ上のみで、全員がチャットから退出するかサーバーを再起動すると消える。
+現状は単一プロセスで起動すること。複数ワーカー・複数サーバーに分散する場合は共有ストアと配信基盤が必要。
+
+`python -m unittest test_chat -v` で実サーバーを使った配信・ルーム分離・履歴・入力検証を確認できる。
+ブラウザとの結合テストは `../frontend` で `npm run test:chat` を実行する。
+新しいエンドポイントを反映するにはバックエンドを再起動すること。
+
+既存の顔検出で使う `cv2.CascadeClassifier` との互換性のため、依存関係は
+`opencv-python>=4.8,<5` としている。更新時は `pip install -r requirements.txt` を実行する。
+
 ### `POST /api/vital`
 
 Request:

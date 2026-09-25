@@ -1,11 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import styles from './page.module.css';
 import { useWebcam } from '@/hooks/useWebcam';
 import { useVitalRoom } from '@/hooks/useVitalRoom';
 import { LineChart, type Series } from '@/components/LineChart';
 import { Report } from '@/components/Report';
+import { CameraPreview, type CameraSettings } from '@/components/CameraPreview';
+import { DeviceSetup, type AudioSettings } from '@/components/DeviceSetup';
+import { getVitalAlert, VITAL_ALERT_THRESHOLDS } from '@/lib/vitalAlerts';
+import { useRoomChat } from '@/hooks/useRoomChat';
+import { RoomChat } from '@/components/RoomChat';
 import type { Participant, Role, Sample, Vitals } from '@/types';
 
 function randomCode(): string {
@@ -20,16 +25,17 @@ const TOPIC_PRESETS = [
 const SERIES_COLORS = ['#5a8ce6', '#e6a15a', '#8b5ae6', '#5ae6a1'];
 
 /* ===== ストレスメーター ===== */
-function StressMeter({ value }: { value: number }) {
-  const v = Math.max(0, Math.min(100, value));
+function StressMeter({ value, alert }: { value: number | null; alert: boolean }) {
+  const v = value ?? 0;
   const hue = 120 - (v / 100) * 120;
   return (
     <div className={styles.meterWrap}>
       <div className={styles.meterHead}>
-        <span>ストレス</span><span className={styles.meterVal}>{Math.round(v)}</span>
+        <span>ストレス</span><span className={`${styles.meterVal} ${alert ? styles.metricAlert : ''}`}>{value === null ? '--' : Math.round(v * 10) / 10}</span>
       </div>
-      <div className={styles.meterTrack}>
-        <div className={styles.meterFill} style={{ width: `${v}%`, background: `hsl(${hue} 60% 45%)` }} />
+      <div className={styles.meterTrack} role="meter" aria-label="ストレス" aria-valuemin={0} aria-valuemax={100}
+        aria-valuenow={value ?? undefined} aria-valuetext={value === null ? '未計測' : undefined}>
+        <div className={styles.meterFill} style={{ width: `${v}%`, background: alert ? '#ef5555' : `hsl(${hue} 60% 45%)` }} />
       </div>
     </div>
   );
@@ -37,32 +43,39 @@ function StressMeter({ value }: { value: number }) {
 
 /* ===== 参加者カード ===== */
 function VitalCard({
-  p, isSelf, videoRef, stressHistory, color,
+  p, isSelf, preview, stressHistory, color, alertsEnabled,
 }: {
   p: Participant;
   isSelf: boolean;
-  videoRef?: RefObject<HTMLVideoElement | null>;
+  preview?: ReactNode;
   stressHistory: number[];
   color: string;
+  alertsEnabled: boolean;
 }) {
   const v: Vitals = p.vitals || { current_bpm: 0, is_anomalous: false };
-  const bpm = v.current_bpm && v.current_bpm > 0 ? Math.round(v.current_bpm) : null;
+  const alert = getVitalAlert(v, alertsEnabled);
+  const bpm = alert.bpm === null ? null : Math.round(alert.bpm * 10) / 10;
+  const notice = alert.active ? `⚠ ${alert.message}`
+    : !alertsEnabled ? '計測停止中'
+      : alert.bpm === null && (alert.stress === null || alert.stress === 0) ? '計測データを待っています'
+        : '設定値を超えた項目はありません';
   return (
-    <div className={`${styles.card} ${isSelf ? styles.cardSelf : ''}`}>
+    <section aria-label={isSelf ? '自分のバイタル' : `${p.name}のバイタル`}
+      className={`${styles.card} ${isSelf ? styles.cardSelf : ''} ${alert.active ? styles.cardAlert : ''}`}>
       <div className={styles.cardHead}>
         <span className={styles.roleBadge}>{ROLE_LABEL[p.role] ?? p.role}</span>
         <span className={styles.cardName}>{p.name}{isSelf ? '（あなた）' : ''}</span>
         {v.is_anomalous && <span className={styles.chip}>変化あり</span>}
       </div>
 
-      {isSelf && <video ref={videoRef} className={styles.selfPreview} playsInline muted />}
+      {isSelf && preview}
 
       <div className={styles.bpmRow}>
-        <span className={styles.bpmNum}>{bpm ?? '--'}</span>
+        <span className={`${styles.bpmNum} ${alert.bpmHigh ? styles.metricAlert : ''}`}>{bpm ?? '--'}</span>
         <span className={styles.bpmUnit}>bpm</span>
       </div>
 
-      <StressMeter value={v.stress ?? 0} />
+      <StressMeter value={alert.stress} alert={alert.stressHigh} />
 
       <div className={styles.spark}>
         <LineChart series={[{ name: 'stress', color, values: stressHistory }]}
@@ -73,35 +86,67 @@ function VitalCard({
         <span>HRV(RMSSD) {v.hrv_rmssd ? `${Math.round(v.hrv_rmssd)} ms` : '--'}</span>
         <span>信頼度 {v.confidence ? v.confidence.toFixed(2) : '--'}</span>
       </div>
-    </div>
+      <div className={`${styles.alertBar} ${alert.active ? styles.alertBarActive : ''}`}
+        role="status" aria-label="バイタル通知" aria-live="polite" aria-atomic="true">
+        {notice}
+      </div>
+      <p className={styles.alertThresholds}>通知設定：ストレス &gt; {VITAL_ALERT_THRESHOLDS.stress} ／ BPM &gt; {VITAL_ALERT_THRESHOLDS.bpm}</p>
+    </section>
   );
 }
 
 export default function Home() {
   const [name, setName] = useState('');
-  const [roomId, setRoomId] = useState(() => randomCode());
+  const [roomId, setRoomId] = useState('');
+  // サーバーとブラウザーの初期描画を一致させてからコードを生成する。
+  useEffect(() => {
+    const code = randomCode();
+    setRoomId((current) => current || code);
+  }, []);
   const [role, setRole] = useState<Role>('candidate');
   const [consent, setConsent] = useState(false);
-  const [joined, setJoined] = useState(false);
+  const [stage, setStage] = useState<'lobby' | 'setup' | 'room'>('lobby');
+  const joined = stage === 'room';
+  const [cameraSettings, setCameraSettings] = useState<CameraSettings>({
+    enabled: true, deviceId: '', background: 'none', brightness: 100, mirrored: true,
+  });
+  const [audioSettings, setAudioSettings] = useState<AudioSettings>({
+    enabled: false, deviceId: '', outputId: '',
+  });
   const [customTopic, setCustomTopic] = useState('');
   const [showReport, setShowReport] = useState(false);
   const [history, setHistory] = useState<Record<string, Sample[]>>({});
 
+  const canJoin = name.trim().length > 0 && roomId.trim().length > 0 && consent;
   const room = useVitalRoom({ roomId, role, name: name || '参加者', active: joined });
-  const { videoRef, canvasRef, start, stop } = useWebcam({
+  const chat = useRoomChat({ roomId, role, name: name.trim().slice(0, 40), active: canJoin });
+  const chatPanel = <header className={styles.toolbar} aria-label="ルーム操作">
+    <div className={styles.roomMeta}>
+      <RoomChat chat={chat} roomId={roomId} />
+      <span className={styles.roomCode} title={`ルーム ${roomId}`}>ルーム {roomId}</span>
+      {joined ? <>
+        <button type="button" className={styles.reportBtn} onClick={() => setShowReport(true)}>レポート</button>
+        <button type="button" className={styles.leaveBtn} onClick={() => leave()}>退出</button>
+      </> : <><span aria-hidden="true" /><span aria-hidden="true" /></>}
+    </div>
+  </header>;
+  const camera = useWebcam({
+    active: stage !== 'lobby' && cameraSettings.enabled,
+    deviceId: cameraSettings.deviceId,
+    transmitting: joined,
     onFrame: room.sendFrame, intervalMs: 40, quality: 0.6,
   });
 
-  const canJoin = name.trim().length > 0 && roomId.trim().length > 0 && consent;
-
-  const join = async () => {
+  const openSetup = () => {
     if (!canJoin) return;
-    setJoined(true);
-    await start();
+    setStage('setup');
+  };
+  const join = () => {
+    if (!canJoin || (cameraSettings.enabled && (!camera.stream || camera.error || camera.loading))) return;
+    setStage('room');
   };
   const leave = () => {
-    stop();
-    setJoined(false);
+    setStage('lobby');
     setHistory({});
     setShowReport(false);
   };
@@ -156,10 +201,17 @@ export default function Home() {
     return ms;
   }, [history, room.selfId]);
 
-  if (!joined) {
+  if (stage === 'setup') {
+    return <><DeviceSetup name={name} camera={camera} settings={cameraSettings} audio={audioSettings}
+      onCameraChange={setCameraSettings} onAudioChange={setAudioSettings}
+      onBack={() => setStage('lobby')} onJoin={join} />{chatPanel}</>;
+  }
+
+  if (stage === 'lobby') {
     return (
-      <div className={styles.lobbyWrap}>
+      <><div className={styles.lobbyWrap}>
         <div className={styles.lobby}>
+          <p className={styles.lead}>ステップ 1 / 3 · 名前と同意</p>
           <h1 className={styles.title}>本音マッチング ルーム</h1>
           <p className={styles.lead}>
             カメラ映像から自分の心拍・HRV・ストレスを推定し、同じルームの相手と
@@ -169,13 +221,13 @@ export default function Home() {
 
           <label className={styles.field}>
             <span>表示名</span>
-            <input className={styles.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="例: 高橋" />
+            <input className={styles.input} maxLength={40} value={name} onChange={(e) => setName(e.target.value)} placeholder="例: 高橋" />
           </label>
 
           <label className={styles.field}>
             <span>ルームコード（相手と同じ値にする）</span>
             <div className={styles.roomRow}>
-              <input className={styles.input} value={roomId} onChange={(e) => setRoomId(e.target.value.toUpperCase())} />
+              <input className={styles.input} maxLength={100} value={roomId} onChange={(e) => setRoomId(e.target.value.toUpperCase())} />
               <button type="button" className={styles.ghostBtn} onClick={() => setRoomId(randomCode())}>再生成</button>
             </div>
           </label>
@@ -203,10 +255,9 @@ export default function Home() {
             </label>
           </div>
 
-          <button type="button" className={styles.joinBtn} disabled={!canJoin} onClick={join}>同意して参加</button>
+          <button type="button" className={styles.joinBtn} disabled={!canJoin} onClick={openSetup}>同意して機器の設定へ</button>
         </div>
-        <canvas ref={canvasRef} className={styles.hidden} />
-      </div>
+      </div>{chatPanel}</>
     );
   }
 
@@ -217,15 +268,10 @@ export default function Home() {
       : '待機中';
 
   return (
-    <div className={styles.roomWrap}>
+    <><div className={styles.roomWrap}>
       <header className={styles.roomBar}>
         <div className={styles.status}>
           <span className={styles.liveDot} aria-hidden="true" />{status}
-        </div>
-        <div className={styles.roomMeta}>
-          <span className={styles.roomCode}>ルーム {roomId}</span>
-          <button type="button" className={styles.reportBtn} onClick={() => setShowReport(true)}>レポート</button>
-          <button type="button" className={styles.leaveBtn} onClick={leave}>退出</button>
         </div>
       </header>
 
@@ -249,10 +295,16 @@ export default function Home() {
       </div>
 
       <main className={styles.cards}>
-        <VitalCard p={selfCard} isSelf videoRef={videoRef}
+        <VitalCard p={selfCard} isSelf preview={<>
+          <CameraPreview stream={camera.stream} settings={cameraSettings} className={styles.selfPreview} />
+          {camera.error && <p role="alert">{camera.error}<button type="button" onClick={camera.retry}>カメラを再試行</button></p>}
+          {!cameraSettings.enabled && <p>カメラがオフのため、バイタルの計測は停止しています。</p>}
+        </>}
+          alertsEnabled={room.connection === 'open' && !!camera.stream && cameraSettings.enabled}
           stressHistory={stressOf(room.selfId ?? 'self', 80)} color={SERIES_COLORS[0]} />
         {others.map((p, i) => (
           <VitalCard key={p.client_id} p={p} isSelf={false}
+            alertsEnabled={room.connection === 'open'}
             stressHistory={stressOf(p.client_id, 80)} color={SERIES_COLORS[(i + 1) % SERIES_COLORS.length]} />
         ))}
         {others.length === 0 && (
@@ -276,11 +328,9 @@ export default function Home() {
         </section>
       )}
 
-      <canvas ref={canvasRef} className={styles.hidden} />
-
       {showReport && (
         <Report participants={room.participants} history={history} onClose={() => setShowReport(false)} />
       )}
-    </div>
+    </div>{chatPanel}</>
   );
 }

@@ -9,7 +9,9 @@
 }
 
 /* ===== ロビー(同意画面) ===== */
-.lobbyWrap { display: flex; align-items: center; justify-content: center; padding: 24px; }
+.lobbyWrap { display: flex; align-items: center; justify-content: center; padding: 88px 24px 24px; }
+.roomWrap { padding-top: 64px; }
+.toolbar { position: fixed; inset: 0 0 auto; height: 64px; z-index: 30; display: flex; align-items: center; justify-content: flex-end; padding: 12px 16px; background: #17181e; border-bottom: 1px solid #343640; font-family: system-ui, sans-serif; }
 .lobby {
   width: 100%; max-width: 460px;
   background: #1c1d24; border: 1px solid #2b2c34; border-radius: 14px;
@@ -60,13 +62,17 @@
 /* ===== ルーム ===== */
 .roomBar {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 18px; background: #17181e; border-bottom: 1px solid #000;
+  padding: 12px 18px; gap: 16px; background: #17181e; border-bottom: 1px solid #000;
 }
 .status { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: #d6d7dc; }
 .liveDot { width: 9px; height: 9px; border-radius: 50%; background: #5bd18b; animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-.roomMeta { display: flex; align-items: center; gap: 14px; }
-.roomCode { font-size: 12.5px; color: #9a9da5; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+.roomMeta { display: grid; grid-template-columns: 100px minmax(0, 1fr) 80px 64px; align-items: center; gap: 16px; height: 40px; width: min(480px, 100%); }
+.roomMeta > button { height: 40px; padding: 7px 10px; }
+.roomCode { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: #9a9da5; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+@media (max-width: 760px) {
+  .roomMeta { gap: 8px; }
+}
 .leaveBtn {
   padding: 7px 16px; border: none; border-radius: 8px;
   background: #b3413f; color: #fff; font-size: 13px; cursor: pointer;
@@ -85,6 +91,8 @@
   padding: 18px; min-height: 220px;
 }
 .cardSelf { border-color: #3f5a8e; box-shadow: 0 0 0 1px rgba(90, 140, 230, 0.25); }
+.cardAlert { border-color: #ef5555; box-shadow: 0 0 0 1px #ef5555; }
+.cardAlert .selfPreview { outline: 3px solid #ef5555; outline-offset: 2px; }
 
 .cardHead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .roleBadge {
@@ -98,15 +106,18 @@
 }
 
 .selfPreview {
-  /* 映像の上下を切り取らず、顔全体を確認できる高さを確保する。 */
-  width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: contain;
+  /* 面接中の表情が見える大きさを確保し、映像全体を収める。 */
+  display: block;
+  width: 100%;
+  height: clamp(300px, calc(100vh - 400px), 440px);
+  height: clamp(300px, calc(100dvh - 400px), 440px);
   border-radius: 10px; background: #000; margin-bottom: 14px;
-  transform: scaleX(-1);
 }
 
 .bpmRow { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
 .bpmNum { font-size: 46px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: #fff; }
 .bpmUnit { font-size: 14px; color: #9a9da5; }
+.bpmNum.metricAlert, .meterVal.metricAlert { color: #ff9292; }
 
 .meterWrap { margin-bottom: 12px; }
 .meterHead { display: flex; justify-content: space-between; font-size: 12px; color: #9a9da5; margin-bottom: 5px; }
@@ -115,8 +126,12 @@
 .meterFill { height: 100%; border-radius: 999px; transition: width 0.6s ease, background 0.6s ease; }
 
 .subMetrics { display: flex; justify-content: space-between; font-size: 12px; color: #8a8d95; }
+.alertBar { margin-top: 12px; padding: 8px 10px; border-radius: 7px; border-left: 4px solid #444956; background: #242630; color: #b9bbc2; font-size: 12px; line-height: 1.5; }
+.alertBarActive { border-left-color: #ff9292; background: #8c252d; color: #fff; font-weight: 600; }
+.alertThresholds { margin: 6px 0 0; color: #9a9da5; font-size: 11px; line-height: 1.5; }
 
 .spark { margin: 4px 0 12px; }
+.spark svg { height: 48px; }
 
 .waiting { display: flex; flex-direction: column; align-items: center; justify-content: center; border-style: dashed; color: #9a9da5; }
 .waitText { font-size: 15px; margin-bottom: 6px; }
@@ -150,6 +165,7 @@
 
 /* ===== 共有タイムライン ===== */
 .timeline { margin: 6px 18px 22px; background: #1c1d24; border: 1px solid #2b2c34; border-radius: 12px; padding: 14px 16px; }
+.timeline svg { height: 120px; }
 .timelineHead { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: #b9bbc2; margin-bottom: 8px; }
 .timelineTopic { color: #9a9da5; }
 .timelineHint { font-size: 11px; color: #7a7d85; margin-top: 6px; }
