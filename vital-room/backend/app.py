@@ -55,7 +55,10 @@ rooms = RoomManager()
 app = FastAPI(title="Stealth Vital API", version="3.0.0")
 app.add_middleware(
     CORSMiddleware,
+    # ローカル開発ではフロントのポートが 3000/3001… と変わるため、
+    # localhost / 127.0.0.1 の任意ポートを許可する(どのフロントでも動くように)。
     allow_origins=[settings.cors_origin],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=False,
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
@@ -154,9 +157,11 @@ async def _broadcast(room_id: str, force: bool = False) -> None:
             _unregister(room_id, cid)
 
 
-async def _broadcast_msg(room_id: str, payload: dict) -> None:
-    """単発メッセージ(文字起こし等)を全員へ配信。"""
+async def _broadcast_msg(room_id: str, payload: dict, except_id: str | None = None) -> None:
+    """単発メッセージ(文字起こし・画面共有等)を配信。except_id は除外。"""
     for cid, ws in list(_conns.get(room_id, {}).items()):
+        if except_id is not None and cid == except_id:
+            continue
         try:
             await ws.send_json(payload)
         except Exception:  # noqa: BLE001
@@ -168,6 +173,7 @@ async def ws_room(ws: WebSocket, room_id: str) -> None:
     await ws.accept()
     client_id = uuid.uuid4().hex[:8]
     joined = False
+    presenting = False
     try:
         first = await ws.receive_json()
         consent = isinstance(first, dict) and first.get("consent") is True \
@@ -214,6 +220,22 @@ async def ws_room(ws: WebSocket, room_id: str) -> None:
                     }
                     rooms.add_transcript(room_id, seg)
                     await _broadcast_msg(room_id, {"type": "transcript", "segment": seg})
+            elif msg.get("type") == "screen":
+                # 画面共有フレームを送信者以外へ中継(名前も付与)。
+                img = msg.get("image_base64", "")
+                if img:
+                    presenting = True
+                    m = rooms.get_member(room_id, client_id)
+                    await _broadcast_msg(room_id, {
+                        "type": "screen",
+                        "client_id": client_id,
+                        "name": m.name if m else "",
+                        "image_base64": img,
+                    }, except_id=client_id)
+            elif msg.get("type") == "screen_stop":
+                presenting = False
+                await _broadcast_msg(
+                    room_id, {"type": "screen_stop", "client_id": client_id})
             elif msg.get("type") == "leave":
                 break
     except WebSocketDisconnect:
@@ -221,6 +243,12 @@ async def ws_room(ws: WebSocket, room_id: str) -> None:
     except Exception:  # noqa: BLE001
         pass
     finally:
+        if presenting:
+            try:
+                await _broadcast_msg(
+                    room_id, {"type": "screen_stop", "client_id": client_id})
+            except Exception:  # noqa: BLE001
+                pass
         if joined:
             rooms.leave(room_id, client_id)
             _unregister(room_id, client_id)

@@ -11,6 +11,8 @@ interface Options {
   active: boolean;
 }
 
+export interface Presenter { client_id: string; name: string }
+
 export interface VitalRoom {
   connection: RoomConnection;
   selfId: string | null;
@@ -18,10 +20,14 @@ export interface VitalRoom {
   topic: string;
   transcribe: boolean;
   transcript: TranscriptSegment[];
+  presenter: Presenter | null;              // 画面共有中の相手(自分以外)
+  screenFrameRef: { current: string | null }; // 受信した画面フレーム(base64)
   sendFrame: (imageBase64: string) => void;
   sendTopic: (topic: string) => void;
   sendTranscribe: (on: boolean) => void;
   sendTranscript: (text: string) => void;
+  sendScreen: (imageBase64: string) => void;
+  sendScreenStop: () => void;
 }
 
 /**
@@ -36,6 +42,8 @@ export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom
   const [topic, setTopic] = useState<string>('');
   const [transcribe, setTranscribe] = useState<boolean>(false);
   const [transcript, setTranscript] = useState<TranscriptSegment[]>([]);
+  const [presenter, setPresenter] = useState<Presenter | null>(null);
+  const screenFrameRef = useRef<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -62,6 +70,20 @@ export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom
             setTranscript((prev) => {
               const next = [...prev, m.segment as TranscriptSegment];
               return next.length > 500 ? next.slice(next.length - 500) : next;
+            });
+          } else if (m.type === 'screen' && typeof m.image_base64 === 'string') {
+            screenFrameRef.current = m.image_base64;
+            setPresenter((prev) =>
+              prev && prev.client_id === m.client_id
+                ? prev
+                : { client_id: m.client_id, name: m.name || '参加者' });
+          } else if (m.type === 'screen_stop') {
+            setPresenter((prev) => {
+              if (prev && prev.client_id === m.client_id) {
+                screenFrameRef.current = null;
+                return null;
+              }
+              return prev;
             });
           } else if (m.type === 'error') {
             setConnection('error');
@@ -96,6 +118,8 @@ export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom
       setTopic('');
       setTranscribe(false);
       setTranscript([]);
+      setPresenter(null);
+      screenFrameRef.current = null;
     };
   }, [active, roomId, role, name]);
 
@@ -122,9 +146,21 @@ export function useVitalRoom({ roomId, role, name, active }: Options): VitalRoom
   const sendTopic = useCallback((t: string) => send({ type: 'topic', topic: t }), [send]);
   const sendTranscribe = useCallback((on: boolean) => send({ type: 'transcribe', on }), [send]);
   const sendTranscript = useCallback((text: string) => send({ type: 'transcript', text }), [send]);
+  const sendScreenStop = useCallback(() => send({ type: 'screen_stop' }), [send]);
+
+  const sendScreen = useCallback((imageBase64: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // 画面フレームは大きいので、送信待ちが溜まっていたら間引く
+    if (ws.bufferedAmount > 4_000_000) return;
+    try {
+      ws.send(JSON.stringify({ type: 'screen', image_base64: imageBase64 }));
+    } catch { /* noop */ }
+  }, []);
 
   return {
     connection, selfId, participants, topic, transcribe, transcript,
-    sendFrame, sendTopic, sendTranscribe, sendTranscript,
+    presenter, screenFrameRef,
+    sendFrame, sendTopic, sendTranscribe, sendTranscript, sendScreen, sendScreenStop,
   };
 }

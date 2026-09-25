@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import styles from './Report.module.css';
+import { BarChart, type Bar } from './BarChart';
 import type { Participant, Sample } from '@/types';
 
 const ROLE_LABEL: Record<string, string> = { interviewer: '面接官', candidate: '就活生' };
@@ -26,6 +27,46 @@ function aggregateByTopic(samples: Sample[]): TopicAgg[] {
     .sort((a, b) => b.avg - a.avg);
 }
 
+interface QSeg { label: string; topic: string; avg: number; peak: number; count: number }
+
+/** 話題の連続した区間を1つの質問(Q1,Q2…)として時間順に集計。 */
+function segmentByQuestion(samples: Sample[]): QSeg[] {
+  const valid = samples.filter((s) => s.bpm > 0);
+  const src = valid.length > 0 ? valid : samples;
+  const runs: { topic: string; sum: number; peak: number; count: number }[] = [];
+  let cur: { topic: string; sum: number; peak: number; count: number } | null = null;
+  for (const s of src) {
+    const topic = s.topic || '全体';
+    if (!cur || cur.topic !== topic) {
+      cur = { topic, sum: 0, peak: 0, count: 0 };
+      runs.push(cur);
+    }
+    cur.sum += s.stress;
+    cur.peak = Math.max(cur.peak, s.stress);
+    cur.count += 1;
+  }
+  return runs
+    .filter((r) => r.count >= 2) // 一瞬だけの区間は除外
+    .map((r, i) => ({
+      label: `Q${i + 1}`, topic: r.topic,
+      avg: r.sum / r.count, peak: r.peak, count: r.count,
+    }));
+}
+
+function median(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  const a = [...nums].sort((x, y) => x - y);
+  const m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+
+/** その人の平常値(中央値)+余裕を基準値に。過度に赤くならないよう50〜75に収める。 */
+function thresholdFor(samples: Sample[]): number {
+  const vals = samples.filter((s) => s.bpm > 0).map((s) => s.stress);
+  const base = median(vals);
+  return Math.min(75, Math.max(50, Math.round(base + 15)));
+}
+
 interface Props {
   participants: Participant[];
   history: Record<string, Sample[]>;
@@ -35,10 +76,18 @@ interface Props {
 export function Report({ participants, history, onClose }: Props) {
   const perParticipant = useMemo(
     () =>
-      participants.map((p) => ({
-        p,
-        byTopic: aggregateByTopic(history[p.client_id] ?? []),
-      })),
+      participants.map((p) => {
+        const samples = history[p.client_id] ?? [];
+        const segs = segmentByQuestion(samples);
+        const threshold = thresholdFor(samples);
+        return {
+          p,
+          byTopic: aggregateByTopic(samples),
+          segs,
+          threshold,
+          exceeded: segs.filter((s) => s.peak >= threshold),
+        };
+      }),
     [participants, history],
   );
 
@@ -58,8 +107,6 @@ export function Report({ participants, history, onClose }: Props) {
     }
     return common.sort((a, b) => b.combined - a.combined);
   }, [perParticipant]);
-
-  const barColor = (v: number) => `hsl(${120 - (Math.min(100, v) / 100) * 120} 60% 45%)`;
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -96,31 +143,45 @@ export function Report({ participants, history, onClose }: Props) {
           )}
         </section>
 
-        {/* 参加者ごとの論点別緊張 */}
+        {/* 質問別ストレス分析(面接終了サマリー) */}
         <section className={styles.section}>
-          <h3 className={styles.h3}>論点別の緊張(参加者ごと)</h3>
-          <div className={styles.grid}>
-            {perParticipant.map(({ p, byTopic }) => (
+          <h3 className={styles.h3}>質問別ストレス分析</h3>
+          <p className={styles.subNote}>
+            横軸=質問(Q1,Q2…)／縦軸=ストレス(0〜100)。棒=ピーク、白線=平均、
+            破線=基準値(その人の平常値+余裕)。基準を超えた質問は<b>赤</b>で表示します。
+          </p>
+          <div className={styles.chartCol}>
+            {perParticipant.map(({ p, segs, threshold, exceeded }) => (
               <div key={p.client_id} className={styles.pcard}>
                 <div className={styles.phead}>
                   <span className={styles.badge}>{ROLE_LABEL[p.role] ?? p.role}</span>
                   <span className={styles.pname}>{p.name}</span>
                 </div>
-                {byTopic.length === 0 ? (
-                  <p className={styles.empty}>データがありません。</p>
+                {segs.length === 0 ? (
+                  <p className={styles.empty}>十分なデータがありませんでした。</p>
                 ) : (
-                  byTopic.map((t) => (
-                    <div key={t.topic} className={styles.row}>
-                      <div className={styles.rowTop}>
-                        <span className={styles.rowTopic}>{t.topic}</span>
-                        <span className={styles.rowVal}>{Math.round(t.avg)}</span>
-                      </div>
-                      <div className={styles.track}>
-                        <div className={styles.fill}
-                          style={{ width: `${Math.min(100, t.avg)}%`, background: barColor(t.avg) }} />
-                      </div>
+                  <>
+                    <BarChart
+                      bars={segs.map((s): Bar => ({
+                        label: s.label, sub: s.topic, peak: s.peak, avg: s.avg,
+                      }))}
+                      threshold={threshold}
+                    />
+                    <div className={styles.exceed}>
+                      {exceeded.length === 0 ? (
+                        <span className={styles.exceedOk}>基準値を超えた質問はありませんでした。落ち着いて話せていたようです。</span>
+                      ) : (
+                        <>
+                          <span className={styles.exceedLabel}>基準値を超えた質問:</span>
+                          {exceeded.map((s) => (
+                            <span key={s.label} className={styles.exceedChip}>
+                              {s.label} {s.topic}（ピーク{Math.round(s.peak)}）
+                            </span>
+                          ))}
+                        </>
+                      )}
                     </div>
-                  ))
+                  </>
                 )}
               </div>
             ))}
