@@ -20,6 +20,7 @@ Stealth Vital API — FastAPI エントリポイント。
 """
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from typing import Dict
@@ -28,6 +29,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from chat import router as chat_router
+from reporting import router as report_router
 
 from vital import (
     RoomManager,
@@ -55,6 +57,7 @@ rooms = RoomManager()
 
 app = FastAPI(title="Stealth Vital API", version="3.0.0")
 app.include_router(chat_router)
+app.include_router(report_router)
 app.add_middleware(
     CORSMiddleware,
     # ローカル開発ではフロントのポートが 3000/3001… と変わるため、
@@ -125,6 +128,8 @@ async def ws_vital(ws: WebSocket) -> None:
 # room_id -> {client_id: WebSocket}  (イベントループ内でのみ操作)
 _conns: Dict[str, Dict[str, WebSocket]] = {}
 _last_bcast: Dict[str, float] = {}
+_room_locks: Dict[str, asyncio.Lock] = {}
+_ending_rooms: Dict[str, int] = {}
 _BCAST_MIN_INTERVAL = 0.1  # 100ms(1参加者あたり最大~10更新/秒)
 
 
@@ -139,35 +144,68 @@ def _unregister(room_id: str, client_id: str) -> None:
         if not conns:
             _conns.pop(room_id, None)
             _last_bcast.pop(room_id, None)
+    if rooms.count(room_id) == 0 and room_id not in _conns:
+        _room_locks.pop(room_id, None)
+        _ending_rooms.pop(room_id, None)
 
 
-async def _broadcast(room_id: str, force: bool = False) -> None:
-    now = time.monotonic()
-    if not force and (now - _last_bcast.get(room_id, 0.0)) < _BCAST_MIN_INTERVAL:
+async def _broadcast(room_id: str, force: bool = False, *, final: bool = False) -> None:
+    if rooms.count(room_id) == 0:
         return
-    _last_bcast[room_id] = now
-    payload = {
-        "type": "room",
-        "participants": rooms.snapshot(room_id),
-        "topic": rooms.get_topic(room_id),
-        "transcribe": rooms.get_transcribe(room_id),
-    }
-    for cid, ws in list(_conns.get(room_id, {}).items()):
-        try:
-            await ws.send_json(payload)
-        except Exception:  # noqa: BLE001
-            _unregister(room_id, cid)
+    async with _room_locks.setdefault(room_id, asyncio.Lock()):
+        if rooms.count(room_id) == 0 or (room_id in _ending_rooms and not final):
+            return
+        now = time.monotonic()
+        if not force and (now - _last_bcast.get(room_id, 0.0)) < _BCAST_MIN_INTERVAL:
+            return
+        _last_bcast[room_id] = now
+        payload = {
+            "type": "room",
+            "participants": rooms.snapshot(room_id),
+            "topic": rooms.get_topic(room_id),
+            "question_id": rooms.get_question_id(room_id),
+            "questions": rooms.get_questions(room_id),
+            "transcribe": rooms.get_transcribe(room_id),
+        }
+        for cid, ws in list(_conns.get(room_id, {}).items()):
+            try:
+                await ws.send_json(payload)
+            except Exception:  # noqa: BLE001
+                _unregister(room_id, cid)
 
 
-async def _broadcast_msg(room_id: str, payload: dict, except_id: str | None = None) -> None:
+async def _broadcast_msg(room_id: str, payload: dict, except_id: str | None = None,
+                         *, final: bool = False) -> None:
     """単発メッセージ(文字起こし・画面共有等)を配信。except_id は除外。"""
-    for cid, ws in list(_conns.get(room_id, {}).items()):
-        if except_id is not None and cid == except_id:
-            continue
+    if room_id not in _conns:
+        return
+    async with _room_locks.setdefault(room_id, asyncio.Lock()):
+        if room_id in _ending_rooms and not final:
+            return
+        for cid, ws in list(_conns.get(room_id, {}).items()):
+            if except_id is not None and cid == except_id:
+                continue
+            try:
+                await ws.send_json(payload)
+            except Exception:  # noqa: BLE001
+                _unregister(room_id, cid)
+
+
+async def _end_session(room_id: str) -> None:
+    # Freeze membership and updates before yielding so a late join cannot receive
+    # a previous interview's report event. Send the last snapshot before closure.
+    if room_id in _ending_rooms:
+        return
+    ended_at = int(time.time() * 1000)
+    _ending_rooms[room_id] = ended_at
+    sockets = list(_conns.get(room_id, {}).values())
+    await _broadcast(room_id, force=True, final=True)
+    await _broadcast_msg(room_id, {"type": "session_ended", "ended_at": ended_at}, final=True)
+    for ws in sockets:
         try:
-            await ws.send_json(payload)
+            await ws.close(code=1000, reason="session_ended")
         except Exception:  # noqa: BLE001
-            _unregister(room_id, cid)
+            pass
 
 
 @app.websocket("/ws/room/{room_id}")
@@ -185,16 +223,27 @@ async def ws_room(ws: WebSocket, room_id: str) -> None:
             await ws.close()
             return
 
+        if room_id in _ending_rooms:
+            await ws.send_json({"type": "session_ended", "ended_at": _ending_rooms[room_id]})
+            await ws.close(code=1000, reason="session_ended")
+            return
+
         role = str(first.get("role", "candidate"))[:20]
         name = str(first.get("name", "参加者"))[:40]
         rooms.join(room_id, client_id, role, name, True)
         _register(room_id, client_id, ws)
         joined = True
-        await ws.send_json({"type": "joined", "client_id": client_id})
+        await ws.send_json({
+            "type": "joined", "client_id": client_id, "joined_at": int(time.time() * 1000),
+        })
         await _broadcast(room_id, force=True)
 
         while True:
             msg = await ws.receive_json()
+            if room_id in _ending_rooms:
+                # Keep the socket alive until the final snapshot and end event
+                # have been delivered, even when another frame is in flight.
+                continue
             if not isinstance(msg, dict):
                 continue
             if msg.get("type") == "frame":
@@ -202,8 +251,18 @@ async def ws_room(ws: WebSocket, room_id: str) -> None:
                 rooms.update_vitals(room_id, client_id, st.as_dict())
                 await _broadcast(room_id)
             elif msg.get("type") == "topic":
-                rooms.set_topic(room_id, str(msg.get("topic", ""))[:120])
-                await _broadcast(room_id, force=True)
+                if rooms.get_role(room_id, client_id) == "interviewer":
+                    if rooms.set_topic(room_id, str(msg.get("topic", ""))[:120]):
+                        await _broadcast(room_id, force=True)
+                    else:
+                        await ws.send_json({"type": "topic_error", "reason": "question_limit"})
+                else:
+                    await ws.send_json({"type": "error", "reason": "interviewer_required"})
+            elif msg.get("type") == "end_session":
+                if rooms.get_role(room_id, client_id) == "interviewer":
+                    await _end_session(room_id)
+                    break
+                await ws.send_json({"type": "error", "reason": "interviewer_required"})
             elif msg.get("type") == "transcribe":
                 # 面接官のみON/OFF可
                 if rooms.get_role(room_id, client_id) == "interviewer":

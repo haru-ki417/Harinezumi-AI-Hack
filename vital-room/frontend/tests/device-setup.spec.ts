@@ -14,7 +14,8 @@ async function trackDevices(page: Page, delayed = false) {
     navigator.mediaDevices.getUserMedia = async (constraints) => {
       const stream = await getUserMedia(constraints);
       window.testTracks.push(...stream.getTracks());
-      if (delay) await new Promise<void>((resolve) => { window.releaseCamera = resolve; });
+      // Only hold the camera permission request; the microphone starts independently.
+      if (delay && constraints?.video) await new Promise<void>((resolve) => { window.releaseCamera = resolve; });
       return stream;
     };
   }, delayed);
@@ -50,6 +51,10 @@ async function mockRoom(page: Page) {
 }
 
 test('設定が済むまで接続せず、参加後に映像を送信し、退出で機器を停止する', async ({ page }) => {
+  await page.route('**/api/reports/analyze', (route) => route.fulfill({ json: {
+    source: 'local', reason: 'not_configured',
+    summary: '質問ごとの集計結果を表示しています。', observations: [],
+  } }));
   await trackDevices(page);
   const room = await mockRoom(page);
   await enterSetup(page);
@@ -57,7 +62,7 @@ test('設定が済むまで接続せず、参加後に映像を送信し、退�
   expect(room.sockets).toHaveLength(0);
   await page.getByLabel('明るさ').fill('115');
   await page.getByLabel('左右を反転して表示').uncheck();
-  await page.getByRole('button', { name: 'マイク', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'マイク', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => page.evaluate(() => window.testTracks.some((t) => t.kind === 'audio' && t.readyState === 'live'))).toBe(true);
   await page.getByRole('button', { name: 'スピーカーをテスト' }).click();
   await expect(page.getByRole('button', { name: 'スピーカーをテスト' })).toBeEnabled();
@@ -71,6 +76,7 @@ test('設定が済むまで接続せず、参加後に映像を送信し、退�
   await expect.poll(() => page.evaluate(() => window.testTracks.some((t) => t.kind === 'audio' && t.readyState === 'ended'))).toBe(true);
   await expect.poll(() => page.evaluate(() => window.testTracks.some((t) => t.kind === 'audio' && t.readyState === 'live'))).toBe(true);
   await page.getByRole('button', { name: '退出', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '面接レポート' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.testTracks.every((t) => t.readyState === 'ended'))).toBe(true);
 });
 
@@ -82,7 +88,11 @@ test('戻ると入力を保持してカメラを停止し、再びプレビュ�
   await page.getByRole('button', { name: 'カメラ', exact: true }).click();
   await expect(page.getByRole('button', { name: 'カメラ', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('button', { name: 'カメラ', exact: true })).toHaveText('カメラ オフ');
-  await expect.poll(() => page.evaluate(() => window.testTracks.every((t) => t.readyState === 'ended'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => {
+    const videoTracks = window.testTracks.filter((track) => track.kind === 'video');
+    return videoTracks.length > 0 && videoTracks.every((track) => track.readyState === 'ended');
+  })).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.testTracks.some((track) => track.kind === 'audio' && track.readyState === 'live'))).toBe(true);
   await page.getByRole('button', { name: 'カメラ', exact: true }).click();
   await expect(page.getByRole('button', { name: 'カメラ', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: '面接に接続', exact: true })).toBeEnabled();
@@ -101,7 +111,10 @@ test('権限拒否を表示し、カメラオフを選ぶと画像を送信せ�
   });
   const room = await mockRoom(page);
   await enterSetup(page);
-  await expect(page.getByRole('alert').filter({ hasText: 'アクセスが許可されていません' })).toBeVisible();
+  const cameraError = page.getByRole('alert').filter({ has: page.getByRole('button', { name: 'カメラを再試行' }) });
+  await expect(cameraError).toBeVisible();
+  await expect(cameraError).toContainText('アクセスが許可されていません');
+  await expect(page.getByRole('group', { name: '音声の確認' }).getByRole('alert')).toContainText('アクセスが許可されていません');
   await expect(page.getByRole('button', { name: '面接に接続', exact: true })).toBeDisabled();
   expect(room.sockets).toHaveLength(0);
   await page.getByRole('button', { name: 'カメラ', exact: true }).click();
@@ -133,14 +146,18 @@ test('選択したカメラ・マイクに切り替え、前の機器とオフ�
     return tracks.length > 1 && tracks[0].readyState === 'ended'
       && tracks.some((t) => t.readyState === 'live' && t.getSettings().deviceId === id);
   }, cameraId)).toBe(true);
-  await page.getByRole('button', { name: 'マイク', exact: true }).click();
   await expect(page.getByRole('button', { name: 'マイク', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect.poll(() => page.evaluate(() => window.testTracks.some((t) => t.kind === 'audio'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.testTracks.some((t) => t.kind === 'audio' && t.readyState === 'live'))).toBe(true);
+  const previousAudioTrackCount = await page.evaluate(() => window.testTracks.filter((track) => track.kind === 'audio').length);
   const micSelect = page.getByRole('combobox', { name: 'マイク', exact: true });
   const micId = await micSelect.locator('option').last().getAttribute('value');
   await micSelect.selectOption(micId!);
-  await expect.poll(() => page.evaluate((id) => window.testTracks.some((t) =>
-    t.kind === 'audio' && t.readyState === 'live' && t.getSettings().deviceId === id), micId)).toBe(true);
+  await expect.poll(() => page.evaluate(({ id, previousCount }) => {
+    const tracks = window.testTracks.filter((track) => track.kind === 'audio');
+    return tracks.length > previousCount
+      && tracks.slice(0, previousCount).every((track) => track.readyState === 'ended')
+      && tracks.some((track) => track.readyState === 'live' && track.getSettings().deviceId === id);
+  }, { id: micId, previousCount: previousAudioTrackCount })).toBe(true);
   await page.getByRole('button', { name: 'マイク', exact: true }).click();
   await expect(page.getByRole('button', { name: 'マイク', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('button', { name: 'マイク', exact: true })).toHaveText('マイク オフ');
@@ -156,7 +173,7 @@ test('マイクの権限拒否はカメラのプレビューと参加を妨げ�
     };
   });
   await enterSetup(page);
-  await page.getByRole('button', { name: 'マイク', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'マイク', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('group', { name: '音声の確認' }).getByRole('alert')).toContainText('アクセスが許可されていません');
   await expect(page.getByRole('button', { name: '面接に接続', exact: true })).toBeEnabled();
   await expect(page.locator('video:visible')).toBeVisible();

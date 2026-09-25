@@ -14,6 +14,8 @@ import { DeviceSetup, type AudioSettings } from '@/components/DeviceSetup';
 import { getVitalAlert, VITAL_ALERT_THRESHOLDS } from '@/lib/vitalAlerts';
 import { useRoomChat } from '@/hooks/useRoomChat';
 import { RoomChat } from '@/components/RoomChat';
+import { useInterviewReport } from '@/hooks/useInterviewReport';
+import type { ReportSummary } from '@/lib/reportAnalysis';
 import type { Participant, Role, Sample, Vitals } from '@/types';
 
 function randomCode(): string {
@@ -211,6 +213,10 @@ export default function Home() {
   });
   const [customTopic, setCustomTopic] = useState('');
   const [showReport, setShowReport] = useState(false);
+  const [reportSummary, setReportSummary] = useState<ReportSummary | null>(null);
+  const [reportCompleted, setReportCompleted] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const reportSession = useInterviewReport();
   const [history, setHistory] = useState<Record<string, Sample[]>>({});
 
   const canJoin = name.trim().length > 0 && roomId.trim().length > 0 && consent;
@@ -308,14 +314,39 @@ export default function Home() {
   };
   const join = () => {
     if (!canJoin || (cameraSettings.enabled && (!camera.stream || camera.error || camera.loading))) return;
+    reportSession.start();
+    setEnding(false);
+    setShowReport(false);
+    setReportSummary(null);
     setStage('room');
   };
-  const leave = () => {
+  const finishInterview = (endedAt?: number) => {
+    const summary = reportSession.snapshot(endedAt);
+    setReportSummary(summary);
+    setReportCompleted(true);
+    setShowReport(summary !== null);
     if (screenShare.sharing) screenShare.stop();
     setStage('lobby');
     setHistory({});
-    setShowReport(false);
+    setEnding(false);
   };
+  const leave = () => finishInterview();
+  const previewReport = () => {
+    setReportSummary(reportSession.snapshot());
+    setReportCompleted(false);
+    setShowReport(true);
+  };
+
+  const { record: recordReport } = reportSession;
+  useEffect(() => {
+    if (joined) recordReport(room.participants, room.questions, room.topic, room.joinedAt);
+  }, [joined, room.participants, room.questions, room.topic, room.joinedAt, recordReport]);
+  // Capture the final server snapshot before disconnecting devices and chat.
+  const finishRef = useRef(finishInterview);
+  finishRef.current = finishInterview;
+  useEffect(() => {
+    if (joined && room.endedAt !== null) finishRef.current(room.endedAt);
+  }, [joined, room.endedAt]);
 
   // 時系列の蓄積(各ブロードキャストごとに全参加者を1サンプル追記)
   useEffect(() => {
@@ -367,6 +398,10 @@ export default function Home() {
     return ms;
   }, [history, room.selfId]);
 
+  const reportPanel = showReport && reportSummary && (
+    <Report summary={reportSummary} completed={reportCompleted} onClose={() => setShowReport(false)} />
+  );
+
   const chatPanel = (
     <header className={styles.toolbar} aria-label="ルーム操作">
       <Brand compact />
@@ -375,10 +410,10 @@ export default function Home() {
         <span className={styles.roomCode} title={`ルーム ${roomId}`}>ルーム {roomId}</span>
         {joined ? (
           <>
-            <button type="button" className={styles.reportBtn} onClick={() => setShowReport(true)}>レポート</button>
+            <button type="button" className={styles.reportBtn} onClick={previewReport}>レポート</button>
             <button type="button" className={styles.leaveBtn} onClick={() => leave()}>退出</button>
           </>
-        ) : (<><span aria-hidden="true" /><span aria-hidden="true" /></>)}
+        ) : (<>{reportSummary && reportCompleted ? <button type="button" className={styles.reportBtn} onClick={() => setShowReport(true)}>前回のレポート</button> : <span aria-hidden="true" />}<span aria-hidden="true" /></>)}
       </div>
     </header>
   );
@@ -390,6 +425,7 @@ export default function Home() {
           onCameraChange={setCameraSettings} onAudioChange={setAudioSettings}
           onBack={() => setStage('lobby')} onJoin={join} />
         {chatPanel}
+        {reportPanel}
       </>
     );
   }
@@ -442,6 +478,8 @@ export default function Home() {
               （相手の映像は共有されません）。また、面接官が<b>文字起こし</b>をONにした場合、
               あなたのマイク音声は端末内で認識され<b>確定テキストのみ</b>が記録・共有されます
               （音声そのものは送られません／ON中は全員に「文字起こし中」と表示されます）。
+              面接終了後は質問ごとの集計値を分析し、AI接続時は外部AIに集計値を送ってコメントを作成します
+              （氏名・映像・音声・文字起こしはAIに送信しません）。
               医療目的ではなく、精度は環境に左右されます。計測はいつでも「退出」で停止できます。
             </p>
             <label className={styles.consentCheck}>
@@ -452,7 +490,7 @@ export default function Home() {
 
           <button type="button" className={styles.joinBtn} disabled={!canJoin} onClick={openSetup}>同意して機器の設定へ</button>
         </div>
-      </div>{chatPanel}</>
+      </div>{chatPanel}{reportPanel}</>
     );
   }
 
@@ -601,23 +639,31 @@ export default function Home() {
           </span>
           {room.transcribe && <span className={styles.recBadge}>● 文字起こし中</span>}
         </div>
+        {role === 'interviewer' && <button type="button" className={styles.leaveBtn}
+          disabled={room.connection !== 'open' || ending}
+          onClick={() => { setEnding(true); room.endSession(); }}>
+          {ending ? '終了処理中…' : '面接を終了'}
+        </button>}
       </header>
 
       {/* トピックバー */}
       <div className={styles.topicBar}>
         <span className={styles.topicLabel}>現在の話題</span>
-        <span className={styles.topicNow}>{room.topic || '未設定'}</span>
+        <span className={styles.topicNow}>{room.questionId > 0 ? `Q${room.questionId} · ` : ''}{room.topic || '未設定'}</span>
         {role === 'interviewer' && (
           <div className={styles.topicControls}>
             {TOPIC_PRESETS.map((t) => (
               <button key={t} type="button"
                 className={`${styles.topicChip} ${room.topic === t ? styles.topicChipOn : ''}`}
+                disabled={room.questions.length >= 200}
                 onClick={() => room.sendTopic(t)}>{t}</button>
             ))}
             <input className={styles.topicInput} value={customTopic}
+              disabled={room.questions.length >= 200}
               onChange={(e) => setCustomTopic(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && customTopic.trim()) { room.sendTopic(customTopic.trim()); setCustomTopic(''); } }}
               placeholder="自由入力→Enter" />
+            {room.questions.length >= 200 && <span role="status">質問は1面接200件までです。</span>}
           </div>
         )}
         {role === 'interviewer' && (
@@ -734,9 +780,7 @@ export default function Home() {
         </section>
       )}
 
-      {showReport && (
-        <Report participants={room.participants} history={history} onClose={() => setShowReport(false)} />
-      )}
+      {reportPanel}
     </div>{chatPanel}</>
   );
 }

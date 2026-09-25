@@ -33,8 +33,10 @@ class VitalState:
     hrv_sdnn: float = 0.0       # ms
     stress: float = 0.0         # 0..100
     eff_fps: float = 0.0
+    measurement_valid: bool = False  # True only for a fresh accepted BPM estimate.
+    stress_valid: bool = False       # Requires fresh HRV and both baselines.
 
-    def as_dict(self) -> Dict[str, float]:
+    def as_dict(self) -> Dict[str, float | bool]:
         return asdict(self)
 
 
@@ -100,18 +102,20 @@ class ClientState:
         # ストレス & 異常判定
         bpm_base = self._baseline(self.bpm_history, t)
         rmssd_base = self._baseline(self.rmssd_history, t)
-        if bpm_base > 0 and rmssd_base > 0:
+        stress_valid = hrv is not None and bpm_base > 0 and rmssd_base > 0
+        if stress_valid:
             self.stress = stress_score(self.bpm, self.rmssd, bpm_base, rmssd_base)
 
         anomalous = False
         if bpm_base > 0 and (self.bpm - bpm_base) >= s.anom_delta_bpm:
             anomalous = True
-        if self.stress >= s.stress_anom_threshold:
+        if stress_valid and self.stress >= s.stress_anom_threshold:
             anomalous = True
 
-        return self._state(anomalous, eff_fps)
+        return self._state(anomalous, eff_fps, measurement_valid=True, stress_valid=stress_valid)
 
-    def _state(self, anomalous: bool, eff_fps: float = 0.0) -> VitalState:
+    def _state(self, anomalous: bool, eff_fps: float = 0.0, *,
+               measurement_valid: bool = False, stress_valid: bool = False) -> VitalState:
         return VitalState(
             current_bpm=round(self.bpm, 1),
             is_anomalous=anomalous,
@@ -121,6 +125,8 @@ class ClientState:
             hrv_sdnn=round(self.sdnn, 1),
             stress=round(self.stress, 1),
             eff_fps=round(eff_fps, 1),
+            measurement_valid=measurement_valid,
+            stress_valid=stress_valid,
         )
 
 

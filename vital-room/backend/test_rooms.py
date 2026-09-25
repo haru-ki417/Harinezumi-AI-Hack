@@ -1,4 +1,6 @@
 """RoomManager(同意付き透明ルーム)のテスト。"""
+from unittest.mock import patch
+
 from vital.rooms import RoomManager
 
 
@@ -74,10 +76,76 @@ def test_transcript():
     print("   OK")
 
 
+def test_question_history_and_cleanup():
+    rm = RoomManager()
+    assert rm.set_topic("missing", "ignored") is False
+    assert rm.get_question_id("missing") == 0
+    assert rm.get_questions("missing") == []
+    rm.join("questions", "i", "interviewer", "面接官", True)
+    rm.join("questions", "c", "candidate", "参加者", True)
+    with patch("vital.rooms.time.time", side_effect=[1000.1, 1000.2, 1000.3]):
+        rm.set_topic("questions", "自己紹介")
+        rm.set_topic("questions", "自己紹介")
+        rm.set_topic("questions", "志望動機")
+    assert rm.get_questions("questions") == [
+        {"id": 1, "topic": "自己紹介", "started_at": 1000100},
+        {"id": 2, "topic": "自己紹介", "started_at": 1000200},
+        {"id": 3, "topic": "志望動機", "started_at": 1000300},
+    ]
+    # Public history copies cannot mutate room state.
+    rm.get_questions("questions")[0]["topic"] = "changed"
+    assert rm.get_questions("questions")[0]["topic"] == "自己紹介"
+    rm.leave("questions", "i")
+    assert rm.get_question_id("questions") == 3
+    rm.leave("questions", "c")
+    assert rm.get_question_id("questions") == 0
+    assert rm.get_questions("questions") == []
+    rm.join("questions", "i2", "interviewer", "面接官", True)
+    rm.set_topic("questions", "新しい面接")
+    assert rm.get_question_id("questions") == 1
+
+
+def test_question_history_is_bounded():
+    rm = RoomManager()
+    rm.join("bounded", "i", "interviewer", "面接官", True)
+    for _ in range(RoomManager.MAX_QUESTIONS):
+        assert rm.set_topic("bounded", "繰り返し") is True
+    assert rm.set_topic("bounded", "上限を超えた質問") is False
+    questions = rm.get_questions("bounded")
+    assert len(questions) == RoomManager.MAX_QUESTIONS
+    assert questions[0]["id"] == 1
+    assert questions[-1]["id"] == RoomManager.MAX_QUESTIONS
+    assert rm.get_question_id("bounded") == RoomManager.MAX_QUESTIONS
+    assert rm.get_topic("bounded") == "繰り返し"
+
+
+def test_vitals_keep_original_question_and_update_timestamp():
+    rm = RoomManager()
+    rm.join("vitals", "c", "candidate", "参加者", True)
+    initial = rm.snapshot("vitals")[0]
+    assert initial["vitals_updated_at"] == 0
+    assert initial["vitals_question_id"] == 0
+    with patch("vital.rooms.time.time", return_value=1000):
+        rm.update_vitals("vitals", "c", {"current_bpm": 70})
+        rm.set_topic("vitals", "自己紹介")
+        # A topic broadcast must not reassign an old measurement to the new question.
+        cached = rm.snapshot("vitals")[0]
+        assert cached["vitals_question_id"] == 0
+        assert cached["vitals_updated_at"] == 1000000
+        rm.update_vitals("vitals", "c", {"current_bpm": 80})
+        fresh = rm.snapshot("vitals")[0]
+        assert fresh["vitals_question_id"] == 1
+        assert fresh["vitals_updated_at"] == 1000001
+        assert fresh["vitals"]["current_bpm"] == 80
+
+
 if __name__ == "__main__":
     test_consent_required()
     test_two_party_snapshot()
     test_leave_cleanup()
     test_topic_share()
     test_transcript()
+    test_question_history_and_cleanup()
+    test_question_history_is_bounded()
+    test_vitals_keep_original_question_and_update_timestamp()
     print("\n=== ルーム全テスト通過 ===")

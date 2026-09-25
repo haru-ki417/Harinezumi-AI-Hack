@@ -1,5 +1,49 @@
 # Stealth Vital API (FastAPI + rPPG)
 
+## 面接終了レポート
+
+`POST /api/reports/analyze` は、面接終了後の質問別集計からコメントを返す。
+入力は `sessionId`、`startedAt` / `endedAt`（ミリ秒）、`thresholds: { stress, bpm }`、
+`questions: [{ id, label: "Q1", topic, startedAt, endedAt }]`、
+`participants: [{ id, name, role, excludedSamples, questions: [{ questionId, stress, bpm }] }]`。
+`stress` / `bpm` の各集計は `{ count, avg, peak, firstExceededAt, peakAt, exceededCount }`。
+未測定なら `count` / `exceededCount` は 0、残りは `null` とする。
+基準値を**厳密に超える値**を超過として扱い、同値は含めない。
+
+応答は `{ source, reason?, summary, observations: [{ participantId, questionId, comment }] }`。
+`source: "ai"` は外部AIから取得したコメント、`source: "local"` は数値だけから作った集計。
+`reason` は `not_configured`（APIキー未設定）、`insufficient_data`（測定なし）、
+`provider_error`（AIの失敗・不正な出力・呼び出し上限）のいずれか。数値グラフと集計はAI未設定でも利用できる。
+AIがコメントを生成しなかった行には、`数値集計：` と明記した補足を付ける。
+
+AIコメントを有効にする場合、**バックエンドのみ**に環境変数を設定して再起動する。
+
+```powershell
+$env:OPENAI_API_KEY = "your-api-key"
+$env:OPENAI_REPORT_MODEL = "gpt-4o-mini" # 省略可能
+.venv/Scripts/python.exe -m uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+`OPENAI_REPORT_MODEL` を変更する場合は Responses API の Structured Outputs に対応するモデルを使う。
+外部送信先は `https://api.openai.com/v1/responses` に固定し、`store: false` を指定する。
+質問番号、匿名の参加者ID、基準値、測定の集計値だけを送る。
+名前・質問本文・面接ID・絶対時刻・画像・音声・文字起こしは送らない。
+超過のある行を優先して最大40行をAIに渡す。コメントは測定値と基準値超過の説明に限り、
+感情・性格・意図・誠実性・採用適性・医学的な状態は推定させない。
+カメラ由来のストレス推定指標は数値的な指標であり、感情の測定値や診断を意味しない。
+基準値は画面で使う参照値であり、医学的な正常範囲ではない。
+
+リクエストは最大1 MiB、参加者20人、質問200件。数値の有限性、集計の整合性、参照先、時刻を検証する。
+外部API呼び出しは25秒の通信タイムアウト、応答256 KiB・出力6000トークンを上限とする。
+同時呼び出しは2件、プロセスあたり1時間に60件まで。集計内容とモデルが同じリクエストは重複をまとめ、
+最大64件をメモリに1時間キャッシュする。サーバー再起動でキャッシュは消える。
+これらの上限は単一プロセス内のものなので、複数ワーカーで公開する場合は外側にも認証・利用量制限を設ける。
+APIキーをフロントエンドの `NEXT_PUBLIC_*` には設定しないこと。
+
+`python -m unittest test_reporting -v` で入力検証・数値集計・匿名化・AI失敗・キャッシュ・
+並行呼び出し制限・Responses APIの構造を検証できる。テストは外部APIに接続せず課金も発生しない。
+API形式は [Structured Outputs公式ドキュメント](https://developers.openai.com/api/docs/guides/structured-outputs) を参照。
+
 Webカメラのフレーム(JPEG/Base64)を受け取り、顔の色変化から心拍数(BPM)を
 rPPG(remote photoplethysmography)で推定して返すバックエンド。フロントの
 `useVitalAPI` が叩く `POST http://localhost:8000/api/vital` を実装している。

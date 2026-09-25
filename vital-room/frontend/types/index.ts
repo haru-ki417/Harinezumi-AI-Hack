@@ -14,6 +14,8 @@ export interface Vitals {
   hrv_sdnn?: number;
   stress?: number;
   eff_fps?: number;
+  measurement_valid?: boolean;
+  stress_valid?: boolean;
 }
 
 export type VitalResponse = Vitals;
@@ -26,6 +28,8 @@ export interface Participant {
   role: Role | string;
   name: string;
   vitals: Vitals;
+  vitals_updated_at?: number;
+  vitals_question_id?: number;
 }
 
 export type RoomConnection = 'idle' | 'connecting' | 'open' | 'error';
@@ -36,6 +40,14 @@ export interface Sample {
   bpm: number;
   stress: number;
   topic: string;
+  questionId?: number;
+  confidence?: number;
+}
+
+export interface InterviewQuestion {
+  id: number;
+  topic: string;
+  started_at: number;
 }
 
 /** 論点別の緊張集計(レポート用) */

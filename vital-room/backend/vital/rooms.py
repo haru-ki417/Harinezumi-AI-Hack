@@ -22,27 +22,49 @@ class Member:
     name: str
     consented: bool
     vitals: dict = field(default_factory=dict)
+    vitals_updated_at: int = 0
+    vitals_question_id: int = 0
     joined_at: float = 0.0
 
 
 class RoomManager:
     MAX_TRANSCRIPT = 2000
+    MAX_QUESTIONS = 200
 
     def __init__(self) -> None:
         self._rooms: Dict[str, Dict[str, Member]] = {}
         self._topics: Dict[str, str] = {}       # room_id -> 現在の話題/質問
+        self._question_ids: Dict[str, int] = {}
+        self._questions: Dict[str, List[dict]] = {}
         self._transcribe: Dict[str, bool] = {}  # room_id -> 文字起こしON/OFF
         self._transcripts: Dict[str, List[dict]] = {}  # room_id -> 発話ログ
         self._lock = threading.Lock()
 
-    def set_topic(self, room_id: str, topic: str) -> None:
+    def set_topic(self, room_id: str, topic: str) -> bool:
         with self._lock:
-            if room_id in self._rooms:
-                self._topics[room_id] = topic
+            if room_id not in self._rooms or self._question_ids.get(room_id, 0) >= self.MAX_QUESTIONS:
+                return False
+            self._topics[room_id] = topic
+            question_id = self._question_ids.get(room_id, 0) + 1
+            self._question_ids[room_id] = question_id
+            self._questions.setdefault(room_id, []).append({
+                "id": question_id,
+                "topic": topic,
+                "started_at": int(time.time() * 1000),
+            })
+            return True
 
     def get_topic(self, room_id: str) -> str:
         with self._lock:
             return self._topics.get(room_id, "")
+
+    def get_question_id(self, room_id: str) -> int:
+        with self._lock:
+            return self._question_ids.get(room_id, 0)
+
+    def get_questions(self, room_id: str) -> List[dict]:
+        with self._lock:
+            return [dict(question) for question in self._questions.get(room_id, [])]
 
     def get_role(self, room_id: str, client_id: str) -> str:
         with self._lock:
@@ -96,6 +118,8 @@ class RoomManager:
                 if not room:
                     del self._rooms[room_id]
                     self._topics.pop(room_id, None)
+                    self._question_ids.pop(room_id, None)
+                    self._questions.pop(room_id, None)
                     self._transcribe.pop(room_id, None)
                     self._transcripts.pop(room_id, None)
 
@@ -103,7 +127,13 @@ class RoomManager:
         with self._lock:
             room = self._rooms.get(room_id)
             if room and client_id in room:
-                room[client_id].vitals = vitals
+                member = room[client_id]
+                member.vitals = vitals
+                # Strictly increasing timestamps distinguish updates within one millisecond.
+                member.vitals_updated_at = max(
+                    int(time.time() * 1000), member.vitals_updated_at + 1,
+                )
+                member.vitals_question_id = self._question_ids.get(room_id, 0)
 
     def snapshot(self, room_id: str) -> List[dict]:
         """ルーム全員の公開用スナップショット(全員に配る内容)。"""
@@ -115,6 +145,8 @@ class RoomManager:
                     "role": m.role,
                     "name": m.name,
                     "vitals": m.vitals,
+                    "vitals_updated_at": m.vitals_updated_at,
+                    "vitals_question_id": m.vitals_question_id,
                 }
                 for m in sorted(room.values(), key=lambda x: x.joined_at)
             ]

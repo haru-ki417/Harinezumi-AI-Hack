@@ -1,6 +1,13 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
+test.beforeEach(async ({ context }) => {
+  await context.route('**/api/reports/analyze', (route) => route.fulfill({ json: {
+    source: 'local', reason: 'insufficient_data',
+    summary: '有効な計測データがありません。', observations: [],
+  } }));
+});
+
 async function mockInterview(page: Page) {
   await page.routeWebSocket('ws://localhost:8000/ws/room/**', (ws) => {
     ws.onMessage((data) => {
@@ -63,6 +70,9 @@ test('面接の入室完了までチャットを接続せず、退出すると�
 
   await page.getByRole('button', { name: 'チャットを閉じる' }).click();
   await page.getByRole('button', { name: '退出', exact: true }).click();
+  const report = page.getByRole('dialog', { name: '面接レポート' });
+  await expect(report).toBeVisible();
+  await report.getByRole('button', { name: 'レポートを閉じる' }).click();
   await expect(code).toBeVisible();
   await expect(toggle).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: 'メッセージ', exact: true })).toHaveCount(0);
@@ -212,6 +222,7 @@ test('未読・途中参加履歴・再接続・文字数制限・小画面表�
   await expect(input).toHaveValue('');
   await page.getByRole('button', { name: 'チャットを閉じる' }).click();
   await page.getByRole('button', { name: '退出', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '面接レポート' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'チャット', exact: true })).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: 'メッセージ', exact: true })).toHaveCount(0);
 });

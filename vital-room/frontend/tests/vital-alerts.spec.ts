@@ -49,9 +49,9 @@ test('ストレス・BPMの超過を個別に表示し、境界値と回復時�
 
   room.update({ current_bpm: 72, stress: 70.1 });
   await expect(self.getByRole('status', { name: 'バイタル通知' })).toContainText('ストレスが設定値を超えています');
-  await expect(preview).toHaveCSS('outline-color', 'rgb(239, 85, 85)');
+  await expect(preview).toHaveCSS('outline-color', 'rgb(236, 95, 95)');
   await expect(preview).toHaveCSS('outline-style', 'solid');
-  await expect(self.getByRole('status', { name: 'バイタル通知' })).toHaveCSS('background-color', 'rgb(140, 37, 45)');
+  await expect(self.getByRole('status', { name: 'バイタル通知' })).toHaveCSS('background-color', 'rgba(236, 95, 95, 0.18)');
   await expect(self.getByRole('meter', { name: 'ストレス' }).locator('div')).toHaveCSS('background-color', 'rgb(239, 85, 85)');
   await expect(other.getByRole('status', { name: 'バイタル通知' })).toHaveText('設定値を超えた項目はありません');
 
@@ -67,7 +67,7 @@ test('ストレス・BPMの超過を個別に表示し、境界値と回復時�
   room.update({ current_bpm: 110, stress: 80 }, { current_bpm: 105, stress: 40 });
   await expect(self.getByRole('status', { name: 'バイタル通知' })).toContainText('ストレス・BPMが設定値を超えています');
   await expect(other.getByRole('status', { name: 'バイタル通知' })).toContainText('BPMが設定値を超えています');
-  await expect(other).toHaveCSS('border-top-color', 'rgb(239, 85, 85)');
+  await expect(other).toHaveCSS('border-top-color', 'rgb(236, 95, 95)');
   await page.screenshot({ path: test.info().outputPath('vital-alerts.png'), fullPage: true });
 
   room.update({ current_bpm: 80, stress: 30 }, { current_bpm: 85, stress: 40 });
@@ -106,7 +106,7 @@ test('欠測・不正値・機器停止・接続切断では古い値による�
   await expect(other.getByRole('status', { name: 'バイタル通知' })).toContainText('ストレス・BPMが設定値を超えています');
   room.close();
   await expect(other.getByRole('status', { name: 'バイタル通知' })).toHaveText('計測停止中');
-  await expect(other).not.toHaveCSS('border-top-color', 'rgb(239, 85, 85)');
+  await expect(other).not.toHaveCSS('border-top-color', 'rgb(236, 95, 95)');
 });
 
 test('カメラオフで参加したときは自分のアラートを表示しない', async ({ page }) => {

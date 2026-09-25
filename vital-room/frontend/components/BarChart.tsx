@@ -1,101 +1,84 @@
 'use client';
 
+import { useId } from 'react';
+
 export interface Bar {
-  label: string;   // Q1, Q2 ...
-  sub?: string;    // 話題名
-  peak: number;    // ピーク値
-  avg: number;     // 平均値
+  label: string;
+  sub?: string;
+  peak: number | null;
+  avg: number | null;
 }
 
 interface Props {
   bars: Bar[];
-  threshold: number;      // 基準線(これ以上のピークは赤)
-  yMax?: number;          // 縦軸最大(既定100)
-  unit?: string;          // 値の単位ラベル
+  threshold: number;
+  yMax?: number;
+  unit?: string;
+  title?: string;
 }
 
-/**
- * 質問(Q1,Q2…)を横軸、値を縦軸にした棒グラフ。
- * 棒=ピーク(基準超は赤)、白い横線=平均、破線=基準値。依存なしのSVG。
- */
-export function BarChart({ bars, threshold, yMax = 100, unit = '' }: Props) {
-  const H = 240;
-  const padL = 36, padR = 14, padT = 20, padB = 46;
-  const slot = 62;
-  const barW = 34;
-  const W = Math.max(320, padL + padR + bars.length * slot);
-  const plotH = H - padT - padB;
-  const y = (v: number) => padT + (1 - Math.max(0, Math.min(yMax, v)) / yMax) * plotH;
-  const grid = [0, 25, 50, 75, 100].filter((g) => g <= yMax);
-
+/** Peak bars, average markers and a threshold line on a shared question axis. */
+export function BarChart({ bars, threshold, yMax = 100, unit = '', title = '質問別の計測値' }: Props) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const height = 290;
+  const padL = 47, padR = 20, padT = 31, padB = 67;
+  const slot = 82;
+  const barWidth = 36;
+  const width = Math.max(360, padL + padR + bars.length * slot);
+  const plotWidth = width - padL - padR;
+  const actualSlot = plotWidth / Math.max(1, bars.length);
+  const peakMax = Math.max(threshold, ...bars.map((bar) => bar.peak ?? 0));
+  const maximum = Math.max(yMax, Math.ceil(peakMax / 20) * 20);
+  const plotHeight = height - padT - padB;
+  const y = (value: number) => padT + (1 - Math.max(0, value) / maximum) * plotHeight;
+  const grid = Array.from({ length: 5 }, (_, index) => maximum * index / 4);
   const accent = 'var(--accent, #5b8cff)';
   const danger = 'var(--danger, #ec5f5f)';
   const line = 'var(--line-2, #363a47)';
-  const textMute = 'var(--text-mute, #838895)';
+  const muted = 'var(--text-mute, #959bab)';
   const text = 'var(--text, #edeff4)';
 
   return (
-    <div style={{ width: '100%', overflowX: 'auto' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%"
-        style={{ minWidth: bars.length > 5 ? W : undefined, display: 'block' }}
-        role="img" aria-label="質問別ストレスの棒グラフ">
-        {/* Yグリッド */}
-        {grid.map((g) => (
-          <g key={g}>
-            <line x1={padL} y1={y(g)} x2={W - padR} y2={y(g)} stroke={line} strokeWidth="1" />
-            <text x={padL - 6} y={y(g) + 3} textAnchor="end" fontSize="10" fill={textMute}>{g}</text>
-          </g>
-        ))}
-
-        {/* 基準線 */}
-        <line x1={padL} y1={y(threshold)} x2={W - padR} y2={y(threshold)}
-          stroke={danger} strokeWidth="1.5" strokeDasharray="5 4" opacity="0.8" />
-        <text x={W - padR} y={y(threshold) - 5} textAnchor="end" fontSize="10" fill={danger}>
-          基準 {Math.round(threshold)}
-        </text>
-
-        {/* 棒 */}
-        {bars.map((b, i) => {
-          const cx = padL + i * slot + (slot - barW) / 2;
-          const over = b.peak >= threshold;
-          const fill = over ? danger : accent;
-          const topY = y(b.peak);
-          const baseY = y(0);
-          return (
-            <g key={b.label}>
-              {/* ピーク棒 */}
-              <rect x={cx} y={topY} width={barW} height={Math.max(0, baseY - topY)}
-                rx="5" fill={fill} opacity={over ? 0.95 : 0.85} />
-              {/* 平均マーカー(白い横線) */}
-              <line x1={cx - 3} y1={y(b.avg)} x2={cx + barW + 3} y2={y(b.avg)}
-                stroke="#fff" strokeWidth="2" opacity="0.9" />
-              {/* ピーク値ラベル */}
-              <text x={cx + barW / 2} y={topY - 6} textAnchor="middle" fontSize="11"
-                fontWeight="700" fill={over ? danger : text}>
-                {Math.round(b.peak)}
-              </text>
-              {/* Q番号 */}
-              <text x={cx + barW / 2} y={H - padB + 16} textAnchor="middle" fontSize="11"
-                fontWeight="700" fill={text}>{b.label}</text>
-              {/* 話題名 */}
-              {b.sub && (
-                <text x={cx + barW / 2} y={H - padB + 30} textAnchor="middle" fontSize="9.5"
-                  fill={textMute}>
-                  {b.sub.length > 6 ? b.sub.slice(0, 6) + '…' : b.sub}
-                </text>
-              )}
+    <div>
+      <div style={{ width: '100%', overflowX: 'auto' }} tabIndex={bars.length > 4 ? 0 : undefined} aria-label={bars.length > 4 ? `${title}（横スクロール）` : undefined}>
+        <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ minWidth: width, display: 'block' }}
+          role="img" aria-label={title} aria-describedby={descriptionId}>
+          <title id={titleId}>{title}</title>
+          <desc id={descriptionId}>横軸は質問、縦軸は{unit || '値'}。棒は最大値、白い横線は平均値、破線は基準値 {threshold}。基準値を超えた棒は赤色です。欠測は数値を表示しません。各数値と時刻は下の表でも確認できます。</desc>
+          <text x={padL} y={14} fill={muted} fontSize="11">{unit || '値'}</text>
+          {grid.map((value) => (
+            <g key={value}>
+              <line x1={padL} y1={y(value)} x2={width - padR} y2={y(value)} stroke={line} />
+              <text x={padL - 8} y={y(value) + 4} textAnchor="end" fontSize="11" fill={muted}>{Number(value.toFixed(1))}</text>
             </g>
-          );
-        })}
-      </svg>
-      {/* 凡例 */}
-      <div style={{
-        display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 6,
-        fontSize: 11, color: textMute,
-      }}>
-        <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: accent, verticalAlign: -1, marginRight: 5 }} />ピーク{unit}</span>
-        <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: danger, verticalAlign: -1, marginRight: 5 }} />基準超え</span>
-        <span><span style={{ display: 'inline-block', width: 12, height: 2, background: '#fff', verticalAlign: 3, marginRight: 5 }} />平均</span>
+          ))}
+          {bars.map((bar, index) => {
+            const center = padL + actualSlot * (index + 0.5);
+            const hasData = bar.peak !== null && bar.avg !== null;
+            const over = bar.peak !== null && bar.peak > threshold;
+            const topY = y(bar.peak ?? 0);
+            return (
+              <g key={bar.label}>
+                <title>{bar.label} {bar.sub}: {hasData ? `最大 ${bar.peak?.toFixed(1)}、平均 ${bar.avg?.toFixed(1)}${unit}。${over ? '基準超過' : '基準超過なし'}` : '欠測'}</title>
+                {hasData ? <>
+                  <rect x={center - barWidth / 2} y={topY} width={barWidth} height={Math.max(2, y(0) - topY)} rx="4" fill={over ? danger : accent} opacity="0.92" />
+                  <line x1={center - barWidth / 2 - 3} x2={center + barWidth / 2 + 3} y1={y(bar.avg!)} y2={y(bar.avg!)} stroke="#fff" strokeWidth="3" />
+                  <text x={center} y={topY - 8} textAnchor="middle" fill={over ? danger : text} fontSize="12" fontWeight="700">{Number(bar.peak!.toFixed(1))}</text>
+                </> : <text x={center} y={y(0) - 14} textAnchor="middle" fontSize="11" fill={muted}>欠測</text>}
+                <text x={center} y={y(0) + 18} textAnchor="middle" fontSize="12" fontWeight="700" fill={text}>{bar.label}</text>
+                <text x={center} y={y(0) + 34} textAnchor="middle" fontSize="10" fill={over ? danger : muted}>{over ? '基準超過' : hasData ? '' : 'データなし'}</text>
+                {bar.sub && <text x={center} y={y(0) + 50} textAnchor="middle" fontSize="10" fill={muted}>{bar.sub.length > 7 ? `${bar.sub.slice(0, 7)}…` : bar.sub}</text>}
+              </g>
+            );
+          })}
+          <line x1={padL} y1={y(threshold)} x2={width - padR} y2={y(threshold)} stroke={danger} strokeWidth="1.5" strokeDasharray="5 4" />
+        </svg>
+      </div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11, lineHeight: 1.8, color: muted }}>
+        <span><span style={{ color: accent }}>■</span> 最大値</span>
+        <span><span style={{ color: '#fff' }}>━</span> 平均値</span>
+        <span style={{ color: danger }}>┄ 基準値 {threshold}{unit ? ` ${unit}` : ''}（超過は赤）</span>
       </div>
     </div>
   );
