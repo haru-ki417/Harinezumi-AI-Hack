@@ -1,0 +1,5 @@
+.preview { position: relative; overflow: hidden; background: #080a0e; border-radius: 12px; }
+.media { display: block; width: 100%; height: 100%; object-fit: contain; }
+.hidden { display: none; }
+.message { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; padding: 24px; color: #b9bbc2; font-size: 14px; text-align: center; }
+.message button { padding: 8px 14px; border: 1px solid #5a8ce6; border-radius: 8px; background: #1c1d24; color: #fff; cursor: pointer; }

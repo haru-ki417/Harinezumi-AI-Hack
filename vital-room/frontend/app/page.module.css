@@ -3,7 +3,7 @@
    CSS変数は :root が使えない(CSS Modules)ため、全画面のルートである
    .lobbyWrap / .roomWrap に定義する(子孫に継承される)。
    ===================================================================== */
-.lobbyWrap, .roomWrap {
+.lobbyWrap, .roomWrap, .toolbar {
   /* 面 */
   --bg:          #0e0f14;
   --bg-grad-1:   #14161d;
@@ -479,3 +479,52 @@
 @media (prefers-reduced-motion: reduce) {
   .heartOn, .liveDot, .lampOk, .lampWarn, .recBadge { animation: none; }
 }
+
+/* =====================================================================
+   統合: チームの新構成(チャットツールバー/アラート/機器設定/CameraPreview)対応
+   ===================================================================== */
+/* 固定チャットツールバー分の余白と、ヘッダーの重なり回避 */
+.roomWrap { padding-top: 64px; }
+.lobbyWrap { padding-top: 84px; }
+.roomBar { position: static; }
+
+/* 上部固定ツールバー(左:ブランド / 右:チャット・コード・レポート・退出) */
+.toolbar {
+  position: fixed; inset: 0 0 auto; height: 64px; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 18px;
+  background: rgba(16, 18, 24, 0.82); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line); color: var(--text);
+  font-family: var(--font);
+}
+.toolbar .roomCode { color: var(--text-dim); }
+.roomMeta {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center; gap: 10px; height: 40px; width: min(520px, 100%);
+}
+.roomMeta > button { height: 38px; }
+.roomCode { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* バイタルアラート(相手機能) */
+.cardAlert { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger), 0 10px 30px rgba(236, 95, 95, 0.12); }
+.cardAlert .selfPreview { outline: 3px solid var(--danger); outline-offset: 2px; }
+.bpmNum.metricAlert, .meterVal.metricAlert { color: #ff9292; }
+.alertBar {
+  margin-top: 12px; padding: 9px 11px; border-radius: var(--r-s);
+  border-left: 4px solid var(--line-2); background: var(--bg); color: var(--text-dim);
+  font-size: 12px; line-height: 1.5;
+}
+.alertBarActive { border-left-color: #ff9292; background: rgba(236, 95, 95, 0.18); color: #ffdada; font-weight: 600; }
+.alertThresholds { margin: 6px 0 0; color: var(--text-mute); font-size: 11px; line-height: 1.5; }
+
+/* CameraPreview 表示サイズ(相手機能) */
+.selfPreview {
+  display: block; width: 100%;
+  height: clamp(300px, calc(100vh - 420px), 440px);
+  height: clamp(300px, calc(100dvh - 420px), 440px);
+  border-radius: var(--r-m); background: #000; margin-bottom: 14px; border: 1px solid var(--line);
+}
+
+/* LineChart(SVG)の高さを固定して崩れを防ぐ */
+.spark svg { height: 48px; }
+.timeline svg { height: 120px; }

@@ -1,15 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import styles from './page.module.css';
 import { useWebcam } from '@/hooks/useWebcam';
 import { useVitalRoom } from '@/hooks/useVitalRoom';
-import { useBackgroundFx, type BgMode } from '@/hooks/useBackgroundFx';
 import { useSpeechToText } from '@/hooks/useSpeechToText';
 import { useAudioDevices } from '@/hooks/useAudioDevices';
 import { useScreenShare } from '@/hooks/useScreenShare';
 import { LineChart, type Series } from '@/components/LineChart';
 import { Report } from '@/components/Report';
+import { CameraPreview, type CameraSettings } from '@/components/CameraPreview';
+import { DeviceSetup, type AudioSettings } from '@/components/DeviceSetup';
+import { getVitalAlert, VITAL_ALERT_THRESHOLDS } from '@/lib/vitalAlerts';
+import { useRoomChat } from '@/hooks/useRoomChat';
+import { RoomChat } from '@/components/RoomChat';
 import type { Participant, Role, Sample, Vitals } from '@/types';
 
 function randomCode(): string {
@@ -57,7 +61,33 @@ function StatusLamp({ label, state, hint }: { label: string; state: LampState; h
   );
 }
 
-/* ===== 受信した共有画面(imgをDOM直更新・再描画しない) ===== */
+/* ===== 鼓動するハート(心拍表示用) ===== */
+function HeartBeat({ active }: { active: boolean }) {
+  return (
+    <svg className={`${styles.heart} ${active ? styles.heartOn : ''}`}
+      viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+      <path d="M12 21s-7.5-4.9-10-9.6C.6 8.6 2 5.5 5 5.1c1.9-.3 3.6.7 4.6 2.1C10.4 5.8 12.1 4.8 14 5.1c3 .4 4.4 3.5 3 6.3C19.5 16.1 12 21 12 21z"
+        fill="currentColor" />
+    </svg>
+  );
+}
+
+/* ===== ブランド(ロゴマーク＋名称) ===== */
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={`${styles.brand} ${compact ? styles.brandCompact : ''}`}>
+      <span className={styles.brandMark} aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18">
+          <path d="M2 12h4l2-5 3 10 3-7 2 2h6" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+      <span className={styles.brandName}>Vital&nbsp;Room</span>
+    </div>
+  );
+}
+
+/* ===== 受信した共有画面(imgをDOM直更新) ===== */
 function ScreenView({ frameRef }: { frameRef: { current: string | null } }) {
   const imgRef = useRef<HTMLImageElement>(null);
   useEffect(() => {
@@ -89,43 +119,18 @@ function ScreenSelfPreview({ stream }: { stream: MediaStream | null }) {
   return <video ref={ref} className={styles.screenImg} muted playsInline />;
 }
 
-/* ===== 鼓動するハート(心拍表示用) ===== */
-function HeartBeat({ active }: { active: boolean }) {
-  return (
-    <svg className={`${styles.heart} ${active ? styles.heartOn : ''}`}
-      viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
-      <path d="M12 21s-7.5-4.9-10-9.6C.6 8.6 2 5.5 5 5.1c1.9-.3 3.6.7 4.6 2.1C10.4 5.8 12.1 4.8 14 5.1c3 .4 4.4 3.5 3 6.3C19.5 16.1 12 21 12 21z"
-        fill="currentColor" />
-    </svg>
-  );
-}
-
-/* ===== ブランド(ロゴマーク＋名称) ===== */
-function Brand({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className={`${styles.brand} ${compact ? styles.brandCompact : ''}`}>
-      <span className={styles.brandMark} aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="18" height="18">
-          <path d="M2 12h4l2-5 3 10 3-7 2 2h6" fill="none" stroke="currentColor"
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </span>
-      <span className={styles.brandName}>Vital&nbsp;Room</span>
-    </div>
-  );
-}
-
 /* ===== ストレスメーター ===== */
-function StressMeter({ value }: { value: number }) {
-  const v = Math.max(0, Math.min(100, value));
+function StressMeter({ value, alert }: { value: number | null; alert: boolean }) {
+  const v = value ?? 0;
   const hue = 120 - (v / 100) * 120;
   return (
     <div className={styles.meterWrap}>
       <div className={styles.meterHead}>
-        <span>ストレス</span><span className={styles.meterVal}>{Math.round(v)}</span>
+        <span>ストレス</span><span className={`${styles.meterVal} ${alert ? styles.metricAlert : ''}`}>{value === null ? '--' : Math.round(v * 10) / 10}</span>
       </div>
-      <div className={styles.meterTrack}>
-        <div className={styles.meterFill} style={{ width: `${v}%`, background: `hsl(${hue} 60% 45%)` }} />
+      <div className={styles.meterTrack} role="meter" aria-label="ストレス" aria-valuemin={0} aria-valuemax={100}
+        aria-valuenow={value ?? undefined} aria-valuetext={value === null ? '未計測' : undefined}>
+        <div className={styles.meterFill} style={{ width: `${v}%`, background: alert ? '#ef5555' : `hsl(${hue} 60% 45%)` }} />
       </div>
     </div>
   );
@@ -133,55 +138,40 @@ function StressMeter({ value }: { value: number }) {
 
 /* ===== 参加者カード ===== */
 function VitalCard({
-  p, isSelf, videoRef, fxCanvasRef, bgActive, camOff, mediaControls, stressHistory, color,
+  p, isSelf, preview, stressHistory, color, alertsEnabled,
 }: {
   p: Participant;
   isSelf: boolean;
-  videoRef?: RefObject<HTMLVideoElement | null>;
-  fxCanvasRef?: RefObject<HTMLCanvasElement | null>;
-  bgActive?: boolean;
-  camOff?: boolean;
-  mediaControls?: ReactNode;
+  preview?: ReactNode;
   stressHistory: number[];
   color: string;
+  alertsEnabled: boolean;
 }) {
   const v: Vitals = p.vitals || { current_bpm: 0, is_anomalous: false };
-  const bpm = v.current_bpm && v.current_bpm > 0 ? Math.round(v.current_bpm) : null;
+  const alert = getVitalAlert(v, alertsEnabled);
+  const bpm = alert.bpm === null ? null : Math.round(alert.bpm * 10) / 10;
+  const notice = alert.active ? `⚠ ${alert.message}`
+    : !alertsEnabled ? '計測停止中'
+      : alert.bpm === null && (alert.stress === null || alert.stress === 0) ? '計測データを待っています'
+        : '設定値を超えた項目はありません';
   return (
-    <div className={`${styles.card} ${isSelf ? styles.cardSelf : ''}`}>
+    <section aria-label={isSelf ? '自分のバイタル' : `${p.name}のバイタル`}
+      className={`${styles.card} ${isSelf ? styles.cardSelf : ''} ${alert.active ? styles.cardAlert : ''}`}>
       <div className={styles.cardHead}>
         <span className={styles.roleBadge}>{ROLE_LABEL[p.role] ?? p.role}</span>
         <span className={styles.cardName}>{p.name}{isSelf ? '（あなた）' : ''}</span>
         {v.is_anomalous && <span className={styles.chip}>変化あり</span>}
       </div>
 
-      {isSelf && (
-        <>
-          <div className={styles.mediaWrap}>
-            <video ref={videoRef}
-              className={`${styles.mediaLayer} ${bgActive ? styles.layerHidden : ''}`}
-              playsInline muted />
-            <canvas ref={fxCanvasRef}
-              className={`${styles.mediaLayer} ${bgActive ? '' : styles.layerHidden}`} />
-            {camOff && (
-              <div className={styles.camOffOverlay}>
-                <span className={styles.camOffIcon}>🚫</span>
-                <span>カメラオフ</span>
-                <span className={styles.camOffSub}>心拍計測は停止中です</span>
-              </div>
-            )}
-          </div>
-          {mediaControls}
-        </>
-      )}
+      {isSelf && preview}
 
       <div className={styles.bpmRow}>
         <HeartBeat active={bpm != null} />
-        <span className={styles.bpmNum}>{bpm ?? '--'}</span>
+        <span className={`${styles.bpmNum} ${alert.bpmHigh ? styles.metricAlert : ''}`}>{bpm ?? '--'}</span>
         <span className={styles.bpmUnit}>bpm</span>
       </div>
 
-      <StressMeter value={v.stress ?? 0} />
+      <StressMeter value={alert.stress} alert={alert.stressHigh} />
 
       <div className={styles.spark}>
         <LineChart series={[{ name: 'stress', color, values: stressHistory }]}
@@ -192,36 +182,58 @@ function VitalCard({
         <span>HRV(RMSSD) {v.hrv_rmssd ? `${Math.round(v.hrv_rmssd)} ms` : '--'}</span>
         <span>信頼度 {v.confidence ? `${Math.round(v.confidence * 100)}%` : '--'}</span>
       </div>
-    </div>
+      <div className={`${styles.alertBar} ${alert.active ? styles.alertBarActive : ''}`}
+        role="status" aria-label="バイタル通知" aria-live="polite" aria-atomic="true">
+        {notice}
+      </div>
+      <p className={styles.alertThresholds}>通知設定：ストレス &gt; {VITAL_ALERT_THRESHOLDS.stress} ／ BPM &gt; {VITAL_ALERT_THRESHOLDS.bpm}</p>
+    </section>
   );
 }
 
 export default function Home() {
   const [name, setName] = useState('');
-  const [roomId, setRoomId] = useState(() => randomCode());
+  const [roomId, setRoomId] = useState('');
+  // サーバーとブラウザーの初期描画を一致させてからコードを生成する。
+  useEffect(() => {
+    const code = randomCode();
+    setRoomId((current) => current || code);
+  }, []);
   const [role, setRole] = useState<Role>('candidate');
   const [consent, setConsent] = useState(false);
-  const [joined, setJoined] = useState(false);
+  const [stage, setStage] = useState<'lobby' | 'setup' | 'room'>('lobby');
+  const joined = stage === 'room';
+  const [cameraSettings, setCameraSettings] = useState<CameraSettings>({
+    enabled: true, deviceId: '', background: 'none', brightness: 100, mirrored: true,
+  });
+  const [audioSettings, setAudioSettings] = useState<AudioSettings>({
+    enabled: true, deviceId: '', outputId: '',
+  });
   const [customTopic, setCustomTopic] = useState('');
   const [showReport, setShowReport] = useState(false);
   const [history, setHistory] = useState<Record<string, Sample[]>>({});
 
-  const [bgMode, setBgMode] = useState<BgMode>('none');
-  const [bgMenuOpen, setBgMenuOpen] = useState(false);
-  const bgImageRef = useRef<HTMLImageElement | null>(null);
-  const [bgImageName, setBgImageName] = useState('');
-
-  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
-  const [selectedCam, setSelectedCam] = useState<string>('');
-  const [micMuted, setMicMuted] = useState(false);
-  const [camOff, setCamOff] = useState(false);
-
+  const canJoin = name.trim().length > 0 && roomId.trim().length > 0 && consent;
   const room = useVitalRoom({ roomId, role, name: name || '参加者', active: joined });
-  const { videoRef, canvasRef, isActive, start, stop, switchCamera } = useWebcam({
+  const chat = useRoomChat({ roomId, role, name: name.trim().slice(0, 40), active: canJoin });
+
+  const camera = useWebcam({
+    active: stage !== 'lobby' && cameraSettings.enabled,
+    deviceId: cameraSettings.deviceId,
+    transmitting: joined,
     onFrame: room.sendFrame, intervalMs: 40, quality: 0.6,
   });
 
-  // カメラ一覧を列挙(権限取得後にラベルが入る)。抜き差しにも追従。
+  // 画面共有(資料/Word/PC画面をルームへ配信)
+  const screenShare = useScreenShare({ onFrame: room.sendScreen, onStop: room.sendScreenStop });
+
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCam, setSelectedCam] = useState('');
+  const [bgMenuOpen, setBgMenuOpen] = useState(false);
+  const [bgImageName, setBgImageName] = useState('');
+  const [backgroundImage, setBackgroundImage] = useState<HTMLImageElement | null>(null);
+  const bgMode = cameraSettings.background;
+  const setBgMode = (background: CameraSettings['background']) => setCameraSettings((current) => ({ ...current, background }));
   useEffect(() => {
     if (!joined) { setCameras([]); return; }
     const refresh = async () => {
@@ -229,7 +241,7 @@ export default function Home() {
         const list = await navigator.mediaDevices.enumerateDevices();
         const cams = list.filter((d) => d.kind === 'videoinput');
         setCameras(cams);
-        const track = (videoRef.current?.srcObject as MediaStream | null)?.getVideoTracks?.()[0];
+        const track = camera.stream?.getVideoTracks?.()[0];
         const activeId = track?.getSettings?.().deviceId;
         setSelectedCam((cur) =>
           cur && cams.some((c) => c.deviceId === cur) ? cur : (activeId || cams[0]?.deviceId || ''),
@@ -241,24 +253,16 @@ export default function Home() {
     refresh();
     navigator.mediaDevices.addEventListener?.('devicechange', refresh);
     return () => navigator.mediaDevices.removeEventListener?.('devicechange', refresh);
-  }, [joined, isActive, videoRef]);
+  }, [joined, camera.stream]);
 
   const onSelectCamera = async (id: string) => {
     setSelectedCam(id);
-    await switchCamera(id);
+    setCameraSettings((current) => ({ ...current, deviceId: id }));
   };
 
-  // マイク/スピーカー(選択・レベルメーター・テスト音)。ミュート中はマイクを開かない。
-  const audio = useAudioDevices(joined, micMuted);
-
-  // 画面共有(資料/Word/PC画面をルームへ配信)
-  const screenShare = useScreenShare({ onFrame: room.sendScreen, onStop: room.sendScreenStop });
-
-  // カメラのオン/オフ切替(オフ中は心拍計測も停止)
-  const toggleCam = async () => {
-    if (camOff) { setCamOff(false); await start(selectedCam || undefined); }
-    else { stop(); setCamOff(true); }
-  };
+  // マイク/スピーカー(選択・レベルメーター・テスト音)。マイクOFF中は開かない。
+  const audio = useAudioDevices(joined && audioSettings.enabled);
+  const setMicEnabled = (on: boolean) => setAudioSettings((c) => ({ ...c, enabled: on }));
 
   const downloadTranscript = () => {
     const lines = room.transcript.map((s) => {
@@ -274,40 +278,42 @@ export default function Home() {
     a.click();
     URL.revokeObjectURL(url);
   };
-  // 背景ぼかし/差し替え(表示用のみ。rPPGは生映像から算出するため影響なし)
-  const { canvasRef: fxCanvasRef, status: bgStatus } = useBackgroundFx(videoRef, bgMode, bgImageRef);
-
   // 文字起こし(面接官がONにすると全員が自分の発話を認識してテキスト送信)
   const [sttLang, setSttLang] = useState('ja-JP');
   const { status: sttStatus } = useSpeechToText(
-    joined && room.transcribe && !micMuted, sttLang, room.sendTranscript,
+    joined && room.transcribe && audioSettings.enabled, sttLang, room.sendTranscript,
   );
 
   const onPickBgImage = (file: File | undefined) => {
     if (!file) return;
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => { bgImageRef.current = img; };
+    img.onload = () => { setBackgroundImage(img); URL.revokeObjectURL(url); };
+    img.onerror = () => URL.revokeObjectURL(url);
     img.src = url;
     setBgImageName(file.name);
-    setBgMode('image');
+    setCameraSettings((current) => ({ ...current, background: 'image' }));
   };
 
-  const canJoin = name.trim().length > 0 && roomId.trim().length > 0 && consent;
+  const { selectMic, selectSpeaker } = audio;
+  useEffect(() => {
+    selectMic(audioSettings.deviceId);
+    selectSpeaker(audioSettings.outputId);
+  }, [audioSettings.deviceId, audioSettings.outputId, selectMic, selectSpeaker]);
 
-  const join = async () => {
+  const openSetup = () => {
     if (!canJoin) return;
-    setJoined(true);
-    await start();
+    setStage('setup');
+  };
+  const join = () => {
+    if (!canJoin || (cameraSettings.enabled && (!camera.stream || camera.error || camera.loading))) return;
+    setStage('room');
   };
   const leave = () => {
-    stop();
     if (screenShare.sharing) screenShare.stop();
-    setJoined(false);
+    setStage('lobby');
     setHistory({});
     setShowReport(false);
-    setCamOff(false);
-    setMicMuted(false);
   };
 
   // 時系列の蓄積(各ブロードキャストごとに全参加者を1サンプル追記)
@@ -360,11 +366,39 @@ export default function Home() {
     return ms;
   }, [history, room.selfId]);
 
-  if (!joined) {
+  const chatPanel = (
+    <header className={styles.toolbar} aria-label="ルーム操作">
+      <Brand compact />
+      <div className={styles.roomMeta}>
+        <RoomChat chat={chat} roomId={roomId} />
+        <span className={styles.roomCode} title={`ルーム ${roomId}`}>ルーム {roomId}</span>
+        {joined ? (
+          <>
+            <button type="button" className={styles.reportBtn} onClick={() => setShowReport(true)}>レポート</button>
+            <button type="button" className={styles.leaveBtn} onClick={() => leave()}>退出</button>
+          </>
+        ) : (<><span aria-hidden="true" /><span aria-hidden="true" /></>)}
+      </div>
+    </header>
+  );
+
+  if (stage === 'setup') {
     return (
-      <div className={styles.lobbyWrap}>
+      <>
+        <DeviceSetup name={name} camera={camera} settings={cameraSettings} audio={audioSettings}
+          onCameraChange={setCameraSettings} onAudioChange={setAudioSettings}
+          onBack={() => setStage('lobby')} onJoin={join} />
+        {chatPanel}
+      </>
+    );
+  }
+
+  if (stage === 'lobby') {
+    return (
+      <><div className={styles.lobbyWrap}>
         <div className={styles.lobby}>
           <Brand />
+          <p className={styles.lead}>ステップ 1 / 3 · 名前と同意</p>
           <h1 className={styles.title}>本音マッチング面接</h1>
           <p className={styles.lead}>
             カメラ映像から自分の心拍・HRV・ストレスを推定し、同じルームの相手と
@@ -374,18 +408,18 @@ export default function Home() {
           <div className={styles.lobbyFeatures}>
             <span className={styles.feat}>非接触で心拍を計測</span>
             <span className={styles.feat}>双方向で透明に共有</span>
-            <span className={styles.feat}>同意ベース</span>
+            <span className={styles.feat}>チャット・画面共有</span>
           </div>
 
           <label className={styles.field}>
             <span>表示名</span>
-            <input className={styles.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="例: 高橋" />
+            <input className={styles.input} maxLength={40} value={name} onChange={(e) => setName(e.target.value)} placeholder="例: 高橋" />
           </label>
 
           <label className={styles.field}>
             <span>ルームコード（相手と同じ値にする）</span>
             <div className={styles.roomRow}>
-              <input className={styles.input} value={roomId} onChange={(e) => setRoomId(e.target.value.toUpperCase())} />
+              <input className={styles.input} maxLength={100} value={roomId} onChange={(e) => setRoomId(e.target.value.toUpperCase())} />
               <button type="button" className={styles.ghostBtn} onClick={() => setRoomId(randomCode())}>再生成</button>
             </div>
           </label>
@@ -415,10 +449,9 @@ export default function Home() {
             </label>
           </div>
 
-          <button type="button" className={styles.joinBtn} disabled={!canJoin} onClick={join}>同意して参加</button>
+          <button type="button" className={styles.joinBtn} disabled={!canJoin} onClick={openSetup}>同意して機器の設定へ</button>
         </div>
-        <canvas ref={canvasRef} className={styles.hidden} />
-      </div>
+      </div>{chatPanel}</>
     );
   }
 
@@ -428,27 +461,32 @@ export default function Home() {
       : room.connection === 'error' ? '接続エラー（バックエンド:8000を確認）'
       : '待機中';
 
-  const bgModeLabel = bgMode === 'none' ? 'なし' : bgMode === 'blur' ? 'ぼかし' : '画像';
+  const bgModeLabel = { none: 'なし', blur: 'ぼかし', slate: 'スレート', cream: 'クリーム', image: '画像' }[bgMode];
+
   // ===== デバイス/センサーの状態ランプ =====
   const hv = selfCard.vitals || { current_bpm: 0, is_anomalous: false };
-  const camState: LampState = camOff ? 'warn' : (isActive ? 'ok' : 'error');
-  const micState: LampState = micMuted ? 'warn' : (audio.micActive ? 'ok' : (audio.mics.length ? 'warn' : 'error'));
-  const spkState: LampState =
-    audio.speakers.length === 0 ? 'error' : (audio.speakerSupported ? 'ok' : 'warn');
+  const camState: LampState = !cameraSettings.enabled ? 'warn'
+    : camera.loading ? 'warn'
+      : (camera.stream && !camera.error) ? 'ok' : 'error';
+  const micState: LampState = !audioSettings.enabled ? 'warn'
+    : audio.micActive ? 'ok' : (audio.mics.length ? 'warn' : 'error');
+  const spkState: LampState = !audioSettings.enabled ? 'warn'
+    : audio.speakers.length === 0 ? 'error' : (audio.speakerSupported ? 'ok' : 'warn');
   const heartReliable = !!(hv.current_bpm && hv.current_bpm > 0 && (hv.confidence ?? 0) >= 0.4);
-  const heartState: LampState = (!isActive || camOff) ? 'error' : (heartReliable ? 'ok' : 'warn');
+  const heartState: LampState = (!cameraSettings.enabled || !camera.stream) ? 'error'
+    : heartReliable ? 'ok' : 'warn';
   const confPct = hv.confidence ? Math.round(hv.confidence * 100) : 0;
 
   const deviceLamps = (
     <div className={styles.lampRow}>
       <StatusLamp label="カメラ" state={camState}
-        hint={camOff ? 'カメラオフ' : isActive ? 'カメラ動作中' : 'カメラ停止'} />
+        hint={!cameraSettings.enabled ? 'カメラオフ' : camState === 'ok' ? 'カメラ動作中' : 'カメラ準備中/停止'} />
       <StatusLamp label="マイク" state={micState}
-        hint={micMuted ? 'ミュート中' : audio.micActive ? 'マイク入力中' : 'マイク未接続/停止'} />
+        hint={!audioSettings.enabled ? 'ミュート中' : audio.micActive ? 'マイク入力中' : 'マイク準備中'} />
       <StatusLamp label="スピーカー" state={spkState}
-        hint={spkState === 'ok' ? '出力デバイス選択可' : spkState === 'warn' ? '切替非対応(既定を使用)' : 'スピーカーなし'} />
+        hint={!audioSettings.enabled ? 'マイク未使用' : spkState === 'ok' ? '出力デバイス選択可' : spkState === 'warn' ? '切替非対応(既定)' : 'スピーカーなし'} />
       <StatusLamp label="心拍センサー" state={heartState}
-        hint={camOff ? 'カメラオフのため停止' : heartState === 'ok' ? `計測中 (信頼度${confPct}%)` : heartState === 'warn' ? '取得中… 明るい正面光で顔を映してください' : '停止中'} />
+        hint={!cameraSettings.enabled ? 'カメラオフのため停止' : heartState === 'ok' ? `計測中 (信頼度${confPct}%)` : heartState === 'warn' ? '取得中… 明るい正面光で顔を映してください' : '停止中'} />
     </div>
   );
 
@@ -456,18 +494,18 @@ export default function Home() {
   const mediaButtons = (
     <div className={styles.mediaBtns}>
       <button type="button"
-        className={`${styles.mediaBtn} ${micMuted ? styles.mediaBtnOff : ''}`}
-        onClick={() => setMicMuted((m) => !m)}
-        title={micMuted ? 'ミュート解除' : 'ミュート'}>
-        <span className={styles.mediaBtnIcon}>{micMuted ? '🔇' : '🎤'}</span>
-        {micMuted ? 'ミュート中' : 'マイク'}
+        className={`${styles.mediaBtn} ${!audioSettings.enabled ? styles.mediaBtnOff : ''}`}
+        onClick={() => setMicEnabled(!audioSettings.enabled)}
+        title={audioSettings.enabled ? 'ミュート' : 'ミュート解除'}>
+        <span className={styles.mediaBtnIcon}>{audioSettings.enabled ? '🎤' : '🔇'}</span>
+        {audioSettings.enabled ? 'マイク' : 'ミュート中'}
       </button>
       <button type="button"
-        className={`${styles.mediaBtn} ${camOff ? styles.mediaBtnOff : ''}`}
-        onClick={toggleCam}
-        title={camOff ? 'カメラをオン' : 'カメラをオフ'}>
-        <span className={styles.mediaBtnIcon}>{camOff ? '🚫' : '📷'}</span>
-        {camOff ? 'カメラオフ' : 'カメラ'}
+        className={`${styles.mediaBtn} ${!cameraSettings.enabled ? styles.mediaBtnOff : ''}`}
+        onClick={() => setCameraSettings((c) => ({ ...c, enabled: !c.enabled }))}
+        title={cameraSettings.enabled ? 'カメラをオフ' : 'カメラをオン'}>
+        <span className={styles.mediaBtnIcon}>{cameraSettings.enabled ? '📷' : '🚫'}</span>
+        {cameraSettings.enabled ? 'カメラ' : 'カメラオフ'}
       </button>
       <button type="button"
         className={`${styles.mediaBtn} ${screenShare.sharing ? styles.mediaBtnActive : ''}`}
@@ -481,8 +519,6 @@ export default function Home() {
 
   const bgControls = (
     <>
-    {mediaButtons}
-    {deviceLamps}
     {cameras.length > 0 && (
       <div className={styles.camRow}>
         <span className={styles.camLabel}>カメラ</span>
@@ -550,31 +586,19 @@ export default function Home() {
         </div>
       )}
 
-      {bgMode !== 'none' && bgStatus === 'loading' && <span className={styles.bgNote}>背景処理を読込中…</span>}
-      {bgMode !== 'none' && bgStatus === 'error' && <span className={styles.bgNote}>背景処理を読み込めません（ネット接続を確認）</span>}
       {bgMode === 'image' && bgImageName && <span className={styles.bgNote}>{bgImageName}</span>}
     </div>
     </>
   );
 
   return (
-    <div className={styles.roomWrap}>
+    <><div className={styles.roomWrap}>
       <header className={styles.roomBar}>
         <div className={styles.barLeft}>
-          <Brand compact />
           <span className={`${styles.statusPill} ${styles['conn_' + room.connection]}`}>
             <span className={styles.liveDot} aria-hidden="true" />{status}
           </span>
           {room.transcribe && <span className={styles.recBadge}>● 文字起こし中</span>}
-        </div>
-        <div className={styles.roomMeta}>
-          <button type="button" className={styles.roomCode}
-            title="クリックでルームコードをコピー"
-            onClick={() => navigator.clipboard?.writeText(roomId).catch(() => {})}>
-            <span className={styles.roomCodeLabel}>ROOM</span>{roomId}
-          </button>
-          <button type="button" className={styles.reportBtn} onClick={() => setShowReport(true)}>レポート</button>
-          <button type="button" className={styles.leaveBtn} onClick={leave}>退出</button>
         </div>
       </header>
 
@@ -611,6 +635,7 @@ export default function Home() {
         )}
       </div>
 
+      {/* 画面共有ステージ */}
       {(screenShare.sharing || room.presenter) && (
         <section className={styles.stage}>
           <div className={styles.stageHead}>
@@ -635,11 +660,20 @@ export default function Home() {
       )}
 
       <main className={styles.cards}>
-        <VitalCard p={selfCard} isSelf videoRef={videoRef}
-          fxCanvasRef={fxCanvasRef} bgActive={bgMode !== 'none'} camOff={camOff} mediaControls={bgControls}
+        <VitalCard p={selfCard} isSelf
+          preview={<>
+            <CameraPreview stream={camera.stream} settings={cameraSettings} backgroundImage={backgroundImage} className={styles.selfPreview} />
+            {mediaButtons}
+            {deviceLamps}
+            {bgControls}
+            {camera.error && <p role="alert">{camera.error}<button type="button" onClick={camera.retry}>カメラを再試行</button></p>}
+            {!cameraSettings.enabled && <p className={styles.bgNote}>カメラがオフのため、バイタルの計測は停止しています。</p>}
+          </>}
+          alertsEnabled={room.connection === 'open' && !!camera.stream && cameraSettings.enabled}
           stressHistory={stressOf(room.selfId ?? 'self', 80)} color={SERIES_COLORS[0]} />
         {others.map((p, i) => (
           <VitalCard key={p.client_id} p={p} isSelf={false}
+            alertsEnabled={room.connection === 'open'}
             stressHistory={stressOf(p.client_id, 80)} color={SERIES_COLORS[(i + 1) % SERIES_COLORS.length]} />
         ))}
         {others.length === 0 && (
@@ -699,11 +733,9 @@ export default function Home() {
         </section>
       )}
 
-      <canvas ref={canvasRef} className={styles.hidden} />
-
       {showReport && (
         <Report participants={room.participants} history={history} onClose={() => setShowReport(false)} />
       )}
-    </div>
+    </div>{chatPanel}</>
   );
 }

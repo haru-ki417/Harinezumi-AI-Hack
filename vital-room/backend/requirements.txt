@@ -2,5 +2,6 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 numpy>=1.24
 scipy>=1.10
-opencv-python>=4.8
+# 既存の顔検出で cv2.CascadeClassifier を使用するため、4系を使用する。
+opencv-python>=4.8,<5
 pydantic>=2.0
