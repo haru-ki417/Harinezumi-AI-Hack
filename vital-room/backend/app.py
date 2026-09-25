@@ -147,7 +147,17 @@ async def _broadcast(room_id: str, force: bool = False) -> None:
         "type": "room",
         "participants": rooms.snapshot(room_id),
         "topic": rooms.get_topic(room_id),
+        "transcribe": rooms.get_transcribe(room_id),
     }
+    for cid, ws in list(_conns.get(room_id, {}).items()):
+        try:
+            await ws.send_json(payload)
+        except Exception:  # noqa: BLE001
+            _unregister(room_id, cid)
+
+
+async def _broadcast_msg(room_id: str, payload: dict) -> None:
+    """単発メッセージ(文字起こし等)を全員へ配信。"""
     for cid, ws in list(_conns.get(room_id, {}).items()):
         try:
             await ws.send_json(payload)
@@ -188,6 +198,24 @@ async def ws_room(ws: WebSocket, room_id: str) -> None:
             elif msg.get("type") == "topic":
                 rooms.set_topic(room_id, str(msg.get("topic", ""))[:120])
                 await _broadcast(room_id, force=True)
+            elif msg.get("type") == "transcribe":
+                # 面接官のみON/OFF可
+                if rooms.get_role(room_id, client_id) == "interviewer":
+                    rooms.set_transcribe(room_id, bool(msg.get("on")))
+                    await _broadcast(room_id, force=True)
+            elif msg.get("type") == "transcript":
+                text = str(msg.get("text", "")).strip()[:1000]
+                if text:
+                    m = rooms.get_member(room_id, client_id)
+                    seg = {
+                        "client_id": client_id,
+                        "name": m.name if m else "",
+                        "role": m.role if m else "",
+                        "text": text,
+                        "ts": time.time(),
+                    }
+                    rooms.add_transcript(room_id, seg)
+                    await _broadcast_msg(room_id, {"type": "transcript", "segment": seg})
             elif msg.get("type") == "leave":
                 break
     except WebSocketDisconnect:

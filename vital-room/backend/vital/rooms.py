@@ -26,9 +26,13 @@ class Member:
 
 
 class RoomManager:
+    MAX_TRANSCRIPT = 2000
+
     def __init__(self) -> None:
         self._rooms: Dict[str, Dict[str, Member]] = {}
-        self._topics: Dict[str, str] = {}   # room_id -> 現在の話題/質問
+        self._topics: Dict[str, str] = {}       # room_id -> 現在の話題/質問
+        self._transcribe: Dict[str, bool] = {}  # room_id -> 文字起こしON/OFF
+        self._transcripts: Dict[str, List[dict]] = {}  # room_id -> 発話ログ
         self._lock = threading.Lock()
 
     def set_topic(self, room_id: str, topic: str) -> None:
@@ -39,6 +43,37 @@ class RoomManager:
     def get_topic(self, room_id: str) -> str:
         with self._lock:
             return self._topics.get(room_id, "")
+
+    def get_role(self, room_id: str, client_id: str) -> str:
+        with self._lock:
+            m = self._rooms.get(room_id, {}).get(client_id)
+            return m.role if m else ""
+
+    def get_member(self, room_id: str, client_id: str):
+        with self._lock:
+            return self._rooms.get(room_id, {}).get(client_id)
+
+    def set_transcribe(self, room_id: str, on: bool) -> None:
+        with self._lock:
+            if room_id in self._rooms:
+                self._transcribe[room_id] = bool(on)
+
+    def get_transcribe(self, room_id: str) -> bool:
+        with self._lock:
+            return self._transcribe.get(room_id, False)
+
+    def add_transcript(self, room_id: str, segment: dict) -> None:
+        with self._lock:
+            if room_id not in self._rooms:
+                return
+            log = self._transcripts.setdefault(room_id, [])
+            log.append(segment)
+            if len(log) > self.MAX_TRANSCRIPT:
+                del log[: len(log) - self.MAX_TRANSCRIPT]
+
+    def get_transcript(self, room_id: str) -> List[dict]:
+        with self._lock:
+            return list(self._transcripts.get(room_id, []))
 
     def join(self, room_id: str, client_id: str, role: str,
              name: str, consent: bool) -> bool:
@@ -61,6 +96,8 @@ class RoomManager:
                 if not room:
                     del self._rooms[room_id]
                     self._topics.pop(room_id, None)
+                    self._transcribe.pop(room_id, None)
+                    self._transcripts.pop(room_id, None)
 
     def update_vitals(self, room_id: str, client_id: str, vitals: dict) -> None:
         with self._lock:

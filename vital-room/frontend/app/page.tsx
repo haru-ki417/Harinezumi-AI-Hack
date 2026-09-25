@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import styles from './page.module.css';
 import { useWebcam } from '@/hooks/useWebcam';
 import { useVitalRoom } from '@/hooks/useVitalRoom';
+import { useSpeechToText } from '@/hooks/useSpeechToText';
+import { useAudioDevices } from '@/hooks/useAudioDevices';
 import { LineChart, type Series } from '@/components/LineChart';
 import { Report } from '@/components/Report';
 import { CameraPreview, type CameraSettings } from '@/components/CameraPreview';
@@ -23,6 +25,26 @@ const TOPIC_PRESETS = [
   'キャリアパス', '働き方・残業', '給与・待遇', '逆質問',
 ];
 const SERIES_COLORS = ['#5a8ce6', '#e6a15a', '#8b5ae6', '#5ae6a1'];
+
+/* ===== マイク入力レベル(DOM直接更新・再描画しない) ===== */
+function MicMeter({ levelRef }: { levelRef: { current: number } }) {
+  const fillRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const el = fillRef.current;
+      if (el) el.style.width = `${Math.round((levelRef.current ?? 0) * 100)}%`;
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => cancelAnimationFrame(raf);
+  }, [levelRef]);
+  return (
+    <div className={styles.levelTrack} title="入力レベル">
+      <div ref={fillRef} className={styles.levelFill} style={{ width: '0%' }} />
+    </div>
+  );
+}
 
 /* ===== ストレスメーター ===== */
 function StressMeter({ value, alert }: { value: number | null; alert: boolean }) {
@@ -84,7 +106,7 @@ function VitalCard({
 
       <div className={styles.subMetrics}>
         <span>HRV(RMSSD) {v.hrv_rmssd ? `${Math.round(v.hrv_rmssd)} ms` : '--'}</span>
-        <span>信頼度 {v.confidence ? v.confidence.toFixed(2) : '--'}</span>
+        <span>信頼度 {v.confidence ? `${Math.round(v.confidence * 100)}%` : '--'}</span>
       </div>
       <div className={`${styles.alertBar} ${alert.active ? styles.alertBarActive : ''}`}
         role="status" aria-label="バイタル通知" aria-live="polite" aria-atomic="true">
@@ -136,6 +158,79 @@ export default function Home() {
     transmitting: joined,
     onFrame: room.sendFrame, intervalMs: 40, quality: 0.6,
   });
+
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCam, setSelectedCam] = useState('');
+  const [bgMenuOpen, setBgMenuOpen] = useState(false);
+  const [bgImageName, setBgImageName] = useState('');
+  const [backgroundImage, setBackgroundImage] = useState<HTMLImageElement | null>(null);
+  const bgMode = cameraSettings.background;
+  const setBgMode = (background: CameraSettings['background']) => setCameraSettings((current) => ({ ...current, background }));
+  useEffect(() => {
+    if (!joined) { setCameras([]); return; }
+    const refresh = async () => {
+      try {
+        const list = await navigator.mediaDevices.enumerateDevices();
+        const cams = list.filter((d) => d.kind === 'videoinput');
+        setCameras(cams);
+        const track = camera.stream?.getVideoTracks?.()[0];
+        const activeId = track?.getSettings?.().deviceId;
+        setSelectedCam((cur) =>
+          cur && cams.some((c) => c.deviceId === cur) ? cur : (activeId || cams[0]?.deviceId || ''),
+        );
+      } catch {
+        /* noop */
+      }
+    };
+    refresh();
+    navigator.mediaDevices.addEventListener?.('devicechange', refresh);
+    return () => navigator.mediaDevices.removeEventListener?.('devicechange', refresh);
+  }, [joined, camera.stream]);
+
+  const onSelectCamera = async (id: string) => {
+    setSelectedCam(id);
+    setCameraSettings((current) => ({ ...current, deviceId: id }));
+  };
+
+  // マイク/スピーカー(選択・レベルメーター・テスト音)
+  const audio = useAudioDevices(joined && audioSettings.enabled);
+
+  const downloadTranscript = () => {
+    const lines = room.transcript.map((s) => {
+      const t = new Date((s.ts || 0) * 1000).toLocaleTimeString('ja-JP');
+      return `[${t}] ${ROLE_LABEL[s.role] ?? s.role} ${s.name}: ${s.text}`;
+    });
+    const header = `面接文字起こし  ルーム:${roomId}\n生成: ${new Date().toLocaleString('ja-JP')}\n\n`;
+    const blob = new Blob([header + lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `interview-transcript-${roomId}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  // 文字起こし(面接官がONにすると全員が自分の発話を認識してテキスト送信)
+  const [sttLang, setSttLang] = useState('ja-JP');
+  const { status: sttStatus } = useSpeechToText(
+    joined && room.transcribe, sttLang, room.sendTranscript,
+  );
+
+  const onPickBgImage = (file: File | undefined) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { setBackgroundImage(img); URL.revokeObjectURL(url); };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+    setBgImageName(file.name);
+    setCameraSettings((current) => ({ ...current, background: 'image' }));
+  };
+
+  const { selectMic, selectSpeaker } = audio;
+  useEffect(() => {
+    selectMic(audioSettings.deviceId);
+    selectSpeaker(audioSettings.outputId);
+  }, [audioSettings.deviceId, audioSettings.outputId, selectMic, selectSpeaker]);
 
   const openSetup = () => {
     if (!canJoin) return;
@@ -246,8 +341,10 @@ export default function Home() {
             <p className={styles.consentText}>
               このアプリは、あなたのカメラ映像から<b>あなた自身の</b>心拍・心拍変動・
               ストレスの目安を推定し、同じルームの参加者に数値として表示します
-              （相手の映像は共有されません）。医療目的ではなく、精度は環境に左右されます。
-              計測はいつでも「退出」で停止できます。
+              （相手の映像は共有されません）。また、面接官が<b>文字起こし</b>をONにした場合、
+              あなたのマイク音声は端末内で認識され<b>確定テキストのみ</b>が記録・共有されます
+              （音声そのものは送られません／ON中は全員に「文字起こし中」と表示されます）。
+              医療目的ではなく、精度は環境に左右されます。計測はいつでも「退出」で停止できます。
             </p>
             <label className={styles.consentCheck}>
               <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
@@ -267,11 +364,87 @@ export default function Home() {
       : room.connection === 'error' ? '接続エラー（バックエンド:8000を確認）'
       : '待機中';
 
+  const bgModeLabel = { none: 'なし', blur: 'ぼかし', slate: 'スレート', cream: 'クリーム', image: '画像' }[bgMode];
+  const bgControls = (
+    <>
+    {cameras.length > 0 && (
+      <div className={styles.camRow}>
+        <span className={styles.camLabel}>カメラ</span>
+        <select className={styles.camSelect} value={selectedCam}
+          onChange={(e) => onSelectCamera(e.target.value)}>
+          {cameras.map((c, i) => (
+            <option key={c.deviceId || i} value={c.deviceId}>
+              {c.label || `カメラ ${i + 1}`}
+            </option>
+          ))}
+        </select>
+      </div>
+    )}
+    {audio.mics.length > 0 && (
+      <div className={styles.camRow}>
+        <span className={styles.camLabel}>マイク</span>
+        <select className={styles.camSelect} value={audio.selectedMic}
+          onChange={(e) => audio.selectMic(e.target.value)}>
+          {audio.mics.map((c, i) => (
+            <option key={c.deviceId || i} value={c.deviceId}>
+              {c.label || `マイク ${i + 1}`}
+            </option>
+          ))}
+        </select>
+        <MicMeter levelRef={audio.micLevelRef} />
+      </div>
+    )}
+    {audio.speakers.length > 0 && (
+      <div className={styles.camRow}>
+        <span className={styles.camLabel}>スピーカー</span>
+        <select className={styles.camSelect} value={audio.selectedSpeaker}
+          onChange={(e) => audio.selectSpeaker(e.target.value)}
+          disabled={!audio.speakerSupported}>
+          {audio.speakers.map((c, i) => (
+            <option key={c.deviceId || i} value={c.deviceId}>
+              {c.label || `スピーカー ${i + 1}`}
+            </option>
+          ))}
+        </select>
+        <button type="button" className={styles.testBtn} onClick={audio.testSpeaker}>
+          テスト音
+        </button>
+      </div>
+    )}
+    <div className={styles.bgControls}>
+      <button type="button" className={styles.bgToggle}
+        onClick={() => setBgMenuOpen((o) => !o)} aria-expanded={bgMenuOpen}>
+        <span>背景: {bgModeLabel}</span>
+        <span className={styles.caret}>{bgMenuOpen ? '▲' : '▼'}</span>
+      </button>
+
+      {bgMenuOpen && (
+        <div className={styles.bgMenu}>
+          <button type="button" className={`${styles.bgMenuItem} ${bgMode === 'none' ? styles.bgMenuItemOn : ''}`}
+            onClick={() => { setBgMode('none'); setBgMenuOpen(false); }}>なし（元のカメラ）</button>
+          <button type="button" className={`${styles.bgMenuItem} ${bgMode === 'blur' ? styles.bgMenuItemOn : ''}`}
+            onClick={() => { setBgMode('blur'); setBgMenuOpen(false); }}>ぼかし</button>
+          <button type="button" className={`${styles.bgMenuItem} ${bgMode === 'image' ? styles.bgMenuItemOn : ''}`}
+            onClick={() => { setBgMode('image'); setBgMenuOpen(false); }}>画像（グラデーション）</button>
+          <label className={styles.bgMenuItem}>
+            画像をアップロード…
+            <input type="file" accept="image/*" hidden
+              onChange={(e) => { onPickBgImage(e.target.files?.[0] ?? undefined); setBgMenuOpen(false); }} />
+          </label>
+        </div>
+      )}
+
+      {bgMode === 'image' && bgImageName && <span className={styles.bgNote}>{bgImageName}</span>}
+    </div>
+    </>
+  );
+
   return (
     <><div className={styles.roomWrap}>
       <header className={styles.roomBar}>
         <div className={styles.status}>
           <span className={styles.liveDot} aria-hidden="true" />{status}
+          {room.transcribe && <span className={styles.recBadge}>● 文字起こし中</span>}
         </div>
       </header>
 
@@ -292,11 +465,26 @@ export default function Home() {
               placeholder="自由入力→Enter" />
           </div>
         )}
+        {role === 'interviewer' && (
+          <div className={styles.sttControls}>
+            <button type="button"
+              className={`${styles.sttToggle} ${room.transcribe ? styles.sttOn : ''}`}
+              onClick={() => room.sendTranscribe(!room.transcribe)}>
+              文字起こし: {room.transcribe ? 'ON' : 'OFF'}
+            </button>
+            <select className={styles.sttLang} value={sttLang}
+              onChange={(e) => setSttLang(e.target.value)}>
+              <option value="ja-JP">日本語</option>
+              <option value="en-US">English</option>
+            </select>
+          </div>
+        )}
       </div>
 
       <main className={styles.cards}>
         <VitalCard p={selfCard} isSelf preview={<>
-          <CameraPreview stream={camera.stream} settings={cameraSettings} className={styles.selfPreview} />
+          <CameraPreview stream={camera.stream} settings={cameraSettings} backgroundImage={backgroundImage} className={styles.selfPreview} />
+          {bgControls}
           {camera.error && <p role="alert">{camera.error}<button type="button" onClick={camera.retry}>カメラを再試行</button></p>}
           {!cameraSettings.enabled && <p>カメラがオフのため、バイタルの計測は停止しています。</p>}
         </>}
@@ -327,6 +515,43 @@ export default function Home() {
           <div className={styles.timelineHint}>点線 = 話題の切り替わり</div>
         </section>
       )}
+
+      {/* 文字起こし(面接記録) */}
+      {(room.transcribe || room.transcript.length > 0) && (
+        <section className={styles.transcript}>
+          <div className={styles.transcriptHead}>
+            <span>文字起こし（面接記録）</span>
+            <div className={styles.transcriptActions}>
+              {sttStatus === 'unsupported' && room.transcribe && (
+                <span className={styles.sttNote}>この端末は音声認識非対応（Chrome/Edge推奨）</span>
+              )}
+              {role === 'interviewer' && room.transcript.length > 0 && (
+                <button type="button" className={styles.dlBtn} onClick={downloadTranscript}>
+                  .txtで保存
+                </button>
+              )}
+            </div>
+          </div>
+          <div className={styles.transcriptBody}>
+            {room.transcript.length === 0 ? (
+              <p className={styles.transcriptEmpty}>
+                {room.transcribe ? '発話を待っています…（マイク許可が必要です）' : '文字起こしはオフです。'}
+              </p>
+            ) : (
+              room.transcript.map((s, i) => (
+                <div key={i} className={styles.line}>
+                  <span className={styles.lineWho}>{ROLE_LABEL[s.role] ?? s.role}・{s.name}</span>
+                  <span className={styles.lineText}>{s.text}</span>
+                </div>
+              ))
+            )}
+          </div>
+          <div className={styles.transcriptHint}>
+            音声そのものは共有されず、確定テキストのみが記録されます。公平な評価のための記録用です。
+          </div>
+        </section>
+      )}
+
 
       {showReport && (
         <Report participants={room.participants} history={history} onClose={() => setShowReport(false)} />

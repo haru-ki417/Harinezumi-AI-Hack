@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ImageSegmenter } from '@mediapipe/tasks-vision';
 import styles from './CameraPreview.module.css';
 
-export type Background = 'none' | 'blur' | 'slate' | 'cream';
+export type Background = 'none' | 'blur' | 'slate' | 'cream' | 'image';
 export interface CameraSettings {
   enabled: boolean;
   deviceId: string;
@@ -13,10 +13,11 @@ export interface CameraSettings {
   mirrored: boolean;
 }
 
-export function CameraPreview({ stream, settings, className = '', onReady }: {
+export function CameraPreview({ stream, settings, className = '', backgroundImage, onReady }: {
   stream: MediaStream | null;
   settings: CameraSettings;
   className?: string;
+  backgroundImage?: HTMLImageElement | null;
   onReady?: (ready: boolean) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -87,6 +88,16 @@ export function CameraPreview({ stream, settings, className = '', onReady }: {
                 ctx.filter = 'blur(14px)';
                 ctx.drawImage(video, -20, -20, canvas.width + 40, canvas.height + 40);
                 ctx.filter = 'none';
+              } else if (background === 'image') {
+                if (backgroundImage) {
+                  ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+                } else {
+                  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+                  gradient.addColorStop(0, '#334155');
+                  gradient.addColorStop(1, '#e8dfd0');
+                  ctx.fillStyle = gradient;
+                  ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
               } else {
                 ctx.fillStyle = background === 'slate' ? '#334155' : '#e8dfd0';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -134,7 +145,7 @@ export function CameraPreview({ stream, settings, className = '', onReady }: {
       video.pause();
       video.srcObject = null;
     };
-  }, [stream, background, attempt, onReady]);
+  }, [stream, background, backgroundImage, attempt, onReady]);
 
   const visualStyle = { transform: mirrored ? 'scaleX(-1)' : undefined, filter: `brightness(${brightness}%)` };
   return (

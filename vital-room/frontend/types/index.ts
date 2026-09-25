@@ -45,3 +45,12 @@ export interface TopicStat {
   peakStress: number;
   samples: number;
 }
+
+/** 文字起こしの1発話 */
+export interface TranscriptSegment {
+  client_id: string;
+  name: string;
+  role: Role | string;
+  text: string;
+  ts: number; // epoch秒
+}

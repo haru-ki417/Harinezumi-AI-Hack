@@ -68,7 +68,8 @@ test('設定が済むまで接続せず、参加後に映像を送信し、退�
   await expect.poll(() => room.messages.filter((m) => m.type === 'frame').length).toBeGreaterThan(0);
   await expect(page.locator('video:visible')).toHaveCSS('filter', 'brightness(1.15)');
   await expect(page.locator('video:visible')).toHaveCSS('transform', 'none');
-  await expect.poll(() => page.evaluate(() => window.testTracks.filter((t) => t.kind === 'audio').every((t) => t.readyState === 'ended'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.testTracks.some((t) => t.kind === 'audio' && t.readyState === 'ended'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.testTracks.some((t) => t.kind === 'audio' && t.readyState === 'live'))).toBe(true);
   await page.getByRole('button', { name: '退出', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.testTracks.every((t) => t.readyState === 'ended'))).toBe(true);
 });
