@@ -55,9 +55,9 @@ except Exception:  # noqa: BLE001
 try:  # pragma: no cover - 環境依存
     from vital.face_mesh import face_roi_rgb as _mesh_roi  # type: ignore
 
-    def _roi(img):
+    def _roi(img, key=None):
         r = _mesh_roi(img)
-        return r if r is not None else face_roi_rgb(img)
+        return r if r is not None else face_roi_rgb(img, key=key)
 except Exception:  # noqa: BLE001
     _roi = face_roi_rgb
 
@@ -102,7 +102,7 @@ class VitalResponse(BaseModel):
 def _vitals_for(client_id: str, image_base64: str) -> VitalState:
     img = decode_image(image_base64)
     with FRAME_ROI_LOCK:
-        rgb = _roi(img)
+        rgb = _roi(img, key=client_id)
     if rgb is None:
         return manager.peek(client_id)
     return manager.process(client_id, time.monotonic(), rgb)

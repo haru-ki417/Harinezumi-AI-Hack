@@ -64,13 +64,22 @@ class ClientState:
             previous = self.buf[-1]
             if t <= previous[0]:
                 return
-            jump = np.max(np.abs(np.asarray(rgb) / np.asarray(previous[1:]) - 1))
-            if t - previous[0] > 0.35 or jump > 0.12:
+            if t - previous[0] > 0.35:
+                # 実際にフレームが途切れた(ストリーム停止)場合のみリセット。
+                # 古いデータは陳腐化しているため破棄する。
                 self.buf.clear()
                 self.bpm_history.clear()
                 self.rmssd_history.clear()
                 self.bpm = self.rmssd = self.sdnn = self.stress = 0
                 self.last_compute = float('-inf')
+            else:
+                # 単発の外れフレーム(顔箱のブレ・照明のちらつき等)は、
+                # バッファ全体を捨てず“その1フレームだけスキップ”する。
+                # 以前は全消去していたため、蓄積した数秒ぶんの良データが
+                # 毎回リセットされ、計測開始が遅く途切れやすかった。
+                jump = np.max(np.abs(np.asarray(rgb) / np.asarray(previous[1:]) - 1))
+                if jump > 0.12:
+                    return
         self.buf.append((t, rgb[0], rgb[1], rgb[2]))
         cutoff = t - self.s.window_sec
         while self.buf and self.buf[0][0] < cutoff:
@@ -88,7 +97,7 @@ class ClientState:
         s = self.s
         if len(self.buf) < s.min_samples:
             return self._state(False)
-        if t - self.last_compute < 0.5:
+        if t - self.last_compute < 0.4:
             return self.last_result
 
         arr = np.asarray(self.buf, dtype=float)

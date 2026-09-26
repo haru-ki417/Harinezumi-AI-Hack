@@ -19,7 +19,9 @@ from scipy import signal
 FMIN = 0.7   # 42 BPM
 FMAX = 4.0   # 240 BPM
 TARGET_FPS = 30.0
-MIN_DURATION = 6.0   # Several complete pulse cycles are needed for a stable estimate.
+# 数拍ぶんあれば推定できる。初回表示を速くするため 4.5 秒に短縮
+# (ゼロ詰め＋放物線補間で周波数分解能を補う)。
+MIN_DURATION = 4.5
 
 
 @dataclass
