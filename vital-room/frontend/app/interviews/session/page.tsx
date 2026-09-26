@@ -45,7 +45,7 @@ export default function InterviewSessionPage() {
     const timer = window.setInterval(() => { if (!busyRef.current) void fetchSession(id, token).catch(err => setError(errorText(err))); }, 5000);
     return () => window.clearInterval(timer);
   }, [id, token, session?.invitation.status, session?.feedback_processing, fetchSession]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!ended) transcriptEnd.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [session?.transcript.length, ended]);
+  // 自動スクロールは行わない(ユーザー要望)。会話ログは手動でスクロールする。
   function beforeQuestion() { abortSpeech(true); turnGeneration.current++; voiceReading.current = true; }
   function questionCompleted() {
     voiceReading.current = false;

@@ -38,6 +38,11 @@
     ".next-dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "tests",
+    "playwright.config.ts",
+    "playwright.chat.config.ts",
+    "playwright.report.config.ts",
+    "playwright.hiring.config.ts"
   ]
 }

@@ -46,9 +46,8 @@ export function useHiringVitals({ socket, stream, camera, active, socketReady, r
     const refreshCamera = () => {
       const live = Boolean(camera && stream?.getVideoTracks().some(track => track.readyState === 'live'));
       setCameraState({ stream, live });
-      // Device removal or permission revocation must withdraw sharing immediately.
-      // Transient track mute events do not revoke the user's choice.
-      if (!live && consentRef.current) setConsent(false);
+      // カメラ/マイクをオフにしても「計測に同意」チェックは外さない(本人の意思として保持)。
+      // カメラが無い間は liveCamera=false で計測は自動的に一時停止し、戻れば自動再開する。
     };
     tracks.forEach(track => track.addEventListener('ended', refreshCamera));
     stream?.addEventListener('removetrack', refreshCamera);
@@ -57,7 +56,7 @@ export function useHiringVitals({ socket, stream, camera, active, socketReady, r
       tracks.forEach(track => track.removeEventListener('ended', refreshCamera));
       stream?.removeEventListener('removetrack', refreshCamera);
     };
-  }, [stream, camera, setConsent]);
+  }, [stream, camera]);
   const receive = useCallback((message: Record<string, unknown>) => {
     if (message.type === 'state') {
       const next = (Array.isArray(message.peers) ? message.peers : []).filter((p): p is HiringVitalPeer =>
@@ -77,9 +76,10 @@ export function useHiringVitals({ socket, stream, camera, active, socketReady, r
       const cleared = peersRef.current.find(p => p.client_id === id);
       const next = peersRef.current.map(p => p.client_id === id ? { ...p, vital_consent: false } : p);
       peersRef.current = next; setParticipants(next);
-      // The server clears consent on withdrawal, expiry and processing timeout.
-      // Do not automatically restart sampling while its next state is in flight.
-      if (cleared?.role === roleRef.current) { consentRef.current = false; setConsentValue(false); }
+      // サーバが同意をクリアしても、本人のチェック(=意思)は外さない。カメラが戻り
+      // 条件が揃えば desiredSharing により自動で再開する(カメラ/マイク操作で
+      // チェックが外れてしまう問題への対応)。cleared は未使用でよい。
+      void cleared;
       setRecords(current => { if (!current[id]) return current; const next = { ...current }; delete next[id]; return next; });
       return;
     }
@@ -87,11 +87,25 @@ export function useHiringVitals({ socket, stream, camera, active, socketReady, r
     const participant = peersRef.current.find(p => p.client_id === message.client_id);
     if (!participant?.vital_consent || (participant.role === roleRef.current && (!consentRef.current || !cameraRef.current))) return;
     const raw = message.vitals as Vitals;
-    const bpm = Number.isFinite(raw.current_bpm) && raw.current_bpm > 0 && raw.measurement_valid !== false ? raw.current_bpm : 0;
-    const stress = typeof raw.stress === 'number' && Number.isFinite(raw.stress) && raw.stress >= 0 && raw.stress <= 100 && raw.stress_valid !== false ? raw.stress : undefined;
-    const vitals: Vitals = { ...raw, current_bpm: bpm, stress, is_anomalous: Boolean(raw.is_anomalous) };
     const id = participant.client_id;
-    setRecords(current => ({ ...current, [id]: { vitals, receivedAt: Date.now(), history: stress === undefined ? current[id]?.history || [] : [...(current[id]?.history || []), stress].slice(-MAX_HISTORY) } }));
+    // サーバは新しい推定が確定した瞬間だけ measurement_valid=true を送り、
+    // それ以外の毎フレームは直近値をキャッシュ配信(=false)する。表示をこの
+    // フラグだけで判定すると、確定フレームだけ数値が出て他は消え「点滅」する。
+    // → 直近の有効値を保持し、サーバが 0(計測リセット)を返したときのみ空にする。
+    const freshBpm = Number.isFinite(raw.current_bpm) && raw.current_bpm > 0 && raw.measurement_valid !== false;
+    const freshStress = typeof raw.stress === 'number' && Number.isFinite(raw.stress)
+      && raw.stress >= 0 && raw.stress <= 100 && raw.stress_valid !== false;
+    const reset = !(Number.isFinite(raw.current_bpm) && raw.current_bpm > 0); // 計測リセット
+    setRecords(current => {
+      const prev = current[id]?.vitals;
+      const bpm = freshBpm ? (raw.current_bpm as number) : reset ? 0 : (prev?.current_bpm ?? 0);
+      const stress = freshStress ? raw.stress : reset ? undefined : prev?.stress;
+      const vitals: Vitals = { ...raw, current_bpm: bpm, stress, is_anomalous: Boolean(raw.is_anomalous) };
+      const history = freshStress
+        ? [...(current[id]?.history || []), raw.stress as number].slice(-MAX_HISTORY)
+        : (current[id]?.history || []);
+      return { ...current, [id]: { vitals, receivedAt: Date.now(), history } };
+    });
   }, []);
 
   useEffect(() => {
@@ -120,8 +134,8 @@ export function useHiringVitals({ socket, stream, camera, active, socketReady, r
       const self = peersRef.current.find(p => p.role === roleRef.current);
       if (stopped || !consentRef.current || !activeRef.current || !cameraRef.current || !self?.vital_consent) return;
       if (!stream.getVideoTracks().some(track => track.readyState === 'live')) {
-        // MediaStreamTrack.stop() does not emit ended in every browser.
-        setCameraState({ stream, live: false }); setConsent(false); return;
+        // カメラが無効な間は送信を止めるだけ。同意チェックは外さない(戻れば自動再開)。
+        setCameraState({ stream, live: false }); return;
       }
       if (ws?.readyState !== WebSocket.OPEN || ws.bufferedAmount > 250_000) return;
       if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
@@ -136,7 +150,7 @@ export function useHiringVitals({ socket, stream, camera, active, socketReady, r
       } catch { if (!stopped) setError('計測用画像を送信できません。接続を確認してください。'); }
     }, 50);
     return () => { stopped = true; window.clearInterval(timer); video.pause(); video.srcObject = null; };
-  }, [desiredSharing, acknowledged, stream, socket, setConsent]);
+  }, [desiredSharing, acknowledged, stream, socket]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setRecords(current => {

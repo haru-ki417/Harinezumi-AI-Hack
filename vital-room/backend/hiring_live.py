@@ -31,6 +31,8 @@ MAX_FRAME_FPS = 25
 MAX_FRAME_WORKERS = 2
 FRAME_TIMEOUT = 3
 VITAL_BROADCAST_INTERVAL = 0.2
+# 確定計測が途切れてから表示に直近値を保持し続ける最大秒数(点滅防止)。
+VITAL_HOLD_SECONDS = 3.0
 # The legacy endpoint shares the optional MediaPipe instance; app.py uses this
 # same lock around its ROI call. Per-connection SessionManagers remain separate.
 FRAME_ROI_LOCK = threading.Lock()
@@ -52,6 +54,11 @@ class Peer:
     last_frame: float = 0.0
     last_vital_broadcast: float = 0.0
     frame_task: asyncio.Task | None = None
+    # 直近に「確定」した計測時刻。確定/非確定が細かく交互になっても、この時刻から
+    # HOLD 秒間は直近値を保持して表示の点滅を防ぐ(本当に途切れたら空にする)。
+    last_valid_measure: float = float("-inf")
+    last_valid_stress: float = float("-inf")
+    presenting: bool = False  # 画面共有中か(切断時に相手へ停止を通知するため)
 
     async def send(self, payload: dict, guard=None) -> None:
         async with self.lock:
@@ -152,10 +159,22 @@ async def _frame_result(invitation_id: str, peer: Peer, epoch: int, worker: asyn
     try:
         values = await asyncio.wait_for(asyncio.shield(worker), FRAME_TIMEOUT)
         values = dict(values)
-        if values.get("measurement_valid") is not True:
-            values.update(current_bpm=0.0, measurement_valid=False, is_anomalous=False)
-        if values.get("stress_valid") is not True:
-            values.update(stress=0.0, stress_valid=False)
+        hold_now = time.monotonic()
+        # 確定フレームでは直近有効時刻を更新し、値をそのまま表示。非確定でも
+        # HOLD 秒以内なら直近の心拍値を保持(点滅防止)、それを超えたら空にする。
+        if values.get("measurement_valid") is True:
+            peer.last_valid_measure = hold_now
+        else:
+            values["measurement_valid"] = False
+            values["is_anomalous"] = False
+            if hold_now - peer.last_valid_measure > VITAL_HOLD_SECONDS:
+                values["current_bpm"] = 0.0
+        if values.get("stress_valid") is True:
+            peer.last_valid_stress = hold_now
+        else:
+            values["stress_valid"] = False
+            if hold_now - peer.last_valid_stress > VITAL_HOLD_SECONDS:
+                values["stress"] = 0.0
         if not peer.vital_consent or peer.vital_epoch != epoch:
             return
         if not _active_peer(invitation_id, peer):
@@ -285,7 +304,7 @@ async def _message(ws: WebSocket) -> dict:
         raise HTTPException(400, "メッセージの形式が正しくありません。") from exc
     if not isinstance(data, dict):
         raise HTTPException(400, "メッセージの形式が正しくありません。")
-    if data.get("type") != "frame" and len(raw) > 64_000:
+    if data.get("type") not in ("frame", "screen") and len(raw) > 64_000:
         raise HTTPException(413, "メッセージが長すぎます。")
     return data
 
@@ -358,6 +377,21 @@ async def human_interview(ws: WebSocket, invitation_id: str) -> None:
                     await append_human_turn(invitation_id, token, msg["text"], msg["request_id"])
                     await peer.send({"type": "transcript_saved", "request_id": msg["request_id"]})
                     await _broadcast_state(invitation_id)
+                elif msg.get("type") in ("screen", "screen_stop"):
+                    # 画面共有フレームを相手に中継(WebRTC通話とは独立。画像は保存しない)。
+                    other_role = "candidate" if role == "interviewer" else "interviewer"
+                    other = _peers.get(invitation_id, {}).get(other_role)
+                    if msg.get("type") == "screen":
+                        img = msg.get("image_base64")
+                        if not isinstance(img, str) or not 1 <= len(img) <= MAX_FRAME_BASE64:
+                            raise HTTPException(413, "共有画像が大きすぎるか、形式が正しくありません。")
+                        peer.presenting = True
+                        if other:
+                            await other.send({"type": "screen", "role": role, "image_base64": img})
+                    else:
+                        peer.presenting = False
+                        if other:
+                            await other.send({"type": "screen_stop", "role": role})
             except HTTPException as exc:
                 await peer.send({"type": "error", "message": str(exc.detail), "status": exc.status_code,
                                  "request_id": msg.get("request_id")})
@@ -377,6 +411,15 @@ async def human_interview(ws: WebSocket, invitation_id: str) -> None:
             await asyncio.gather(refresh, return_exceptions=True)
         if peer and _peers.get(invitation_id, {}).get(peer.role) is peer:
             await _clear_vitals(invitation_id, peer)
+            if peer.presenting:
+                # 画面共有中に切断したら、相手側の表示を消す。
+                other_role = "candidate" if peer.role == "interviewer" else "interviewer"
+                other = _peers.get(invitation_id, {}).get(other_role)
+                if other:
+                    try:
+                        await other.send({"type": "screen_stop", "role": peer.role})
+                    except (RuntimeError, WebSocketDisconnect, OSError):
+                        pass
             del _peers[invitation_id][peer.role]
             if not _peers[invitation_id]:
                 del _peers[invitation_id]
