@@ -32,6 +32,20 @@ function buildCoaching(summary: ReportSummary): { highlights: string[]; tips: st
 
 const ROLE_LABEL: Record<string, string> = { interviewer: '面接官', candidate: '就活生' };
 
+/* 星評価。モジュール直下に置き、親の再レンダリングでボタンDOMが作り直されない
+   ようにする（内側で定義するとクリックが取りこぼされる）。 */
+function Stars({ value, onPick }: { value: number; onPick?: (v: number) => void }) {
+  return (
+    <div className={styles.stars}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button key={n} type="button" disabled={!onPick}
+          className={`${styles.star} ${n <= value ? styles.starOn : ''}`}
+          onClick={() => onPick?.(n)} aria-label={`${n}点`}>★</button>
+      ))}
+    </div>
+  );
+}
+
 export function Feedback({
   role, roomId, summary, onClose,
 }: {
@@ -78,16 +92,6 @@ export function Feedback({
     setBusy(false);
     if (ok) { setSaved(true); setData((d) => ({ ...(d ?? {} as FeedbackData), rating, strengths, improvements, notes: [], shared, submitted: true })); }
   };
-
-  const Stars = ({ value, onPick }: { value: number; onPick?: (v: number) => void }) => (
-    <div className={styles.stars}>
-      {[1, 2, 3, 4, 5].map((n) => (
-        <button key={n} type="button" disabled={!onPick}
-          className={`${styles.star} ${n <= value ? styles.starOn : ''}`}
-          onClick={() => onPick?.(n)} aria-label={`${n}点`}>★</button>
-      ))}
-    </div>
-  );
 
   return (
     <div className={styles.overlay} onClick={onClose}>
