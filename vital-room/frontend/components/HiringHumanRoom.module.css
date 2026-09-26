@@ -1,0 +1,9 @@
+.liveLayout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 26px; align-items: start; margin-top: 22px; }
+.call { min-width: 0; }
+.preview { margin-top: 12px; }
+.deviceSettings { margin-top: 18px; }
+.deviceFields { margin-top: 16px; }
+.reconnect { margin-top: 18px; }
+.answer { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
+.answer > h3:first-child { margin-top: 0; }
+@media (max-width: 900px) { .liveLayout { grid-template-columns: 1fr; } }

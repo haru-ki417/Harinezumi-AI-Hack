@@ -1,0 +1,16 @@
+.summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; margin: 24px 0; }
+.summary div { min-width: 0; }
+.summary dt { color: var(--text-mute); font-size: 13px; margin-bottom: 8px; }
+.summary dd { margin: 0; line-height: 1.7; overflow-wrap: anywhere; }
+.copyField { display: flex; gap: 12px; align-items: center; }
+.copyField input { min-width: 0; flex: 1; }
+.copyField button { flex-shrink: 0; }
+.codeInput { font-family: ui-monospace, monospace; font-size: 24px; letter-spacing: .12em; font-weight: 700; }
+.separated { margin-top: 24px; }
+.evidenceItem { margin-bottom: 16px; }
+.reportHeading { margin-top: 0 !important; }
+.reportLayout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; align-items: start; margin-top: 26px; }
+.reportLayout > div { min-width: 0; }
+.review { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 6px; }
+@media (max-width: 800px) { .reportLayout { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .summary { grid-template-columns: 1fr; } .copyField { flex-direction: column; align-items: stretch; } }

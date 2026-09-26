@@ -1,5 +1,8 @@
 # Vital Room — 非接触バイタルの透明な共有
 
+企業による対人・AI面接、応募者別の招待、根拠付きの面接集計については
+[企業向け面接の使い方](INTERVIEWS.md)を参照してください。企業画面は `/company`、応募者の参加画面は `/interviews/join` です。
+
 Webカメラ映像から **rPPG (remote photoplethysmography)** で心拍数(BPM)・
 心拍変動(HRV)・ストレスの目安をリアルタイム推定し、**全員が同意した上で**
 互いに数値を共有する双方向ルーム。面接官・就活生のどちらの役割でも使える。
@@ -68,7 +71,7 @@ cd frontend && npm install && npm run dev
 ## 2人で使う
 
 1. 先にバックエンド(:8000)を起動。
-2. 2人がそれぞれ `http://localhost:3000` を開く（別PC/別ブラウザ）。
+2. 同じPCの別ブラウザーでは、開発時は `http://localhost:3001`、Docker・共有サービスでは `http://localhost:3000` を開く。別PC・スマートフォンから採用面接に参加する場合は、[共有URLの起動手順](INTERVIEWS.md#別のpcスマートフォンへ招待する)に従い、同じHTTPS URLを開く。
 3. **同じルームコード**を入力し、役割（面接官/就活生）を選び、同意して参加。
 4. 互いのBPM・ストレス・HRVがカードで見える。停止は「退出」。
 
@@ -89,6 +92,8 @@ cd frontend && npm install && npm run dev
 - テスト: `cd backend && python test_rppg.py && python test_rooms.py`
 - Lint/型: backend `ruff check . && mypy vital` / frontend `npm run lint && npm run typecheck`
 - CI: ルートの `ci-workflow.yml` を `.github/workflows/ci.yml` に置く
+
+`npm run dev` は `http://localhost:3001` で起動し、`.next-dev` を使用します。別端末向けの共有サービスは `3000` ポートと専用の世代別ビルドを使います。共有中の画面更新は `Update-SharedInterview.ps1` で行ってください。詳しい手順は [企業向け面接の共有手順](INTERVIEWS.md#別のpcスマートフォンへ招待する) を参照してください。
 
 ## チューニング
 

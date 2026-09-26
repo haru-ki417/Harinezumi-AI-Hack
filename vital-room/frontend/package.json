@@ -3,14 +3,17 @@
   "version": "0.3.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --port 3001",
     "build": "next build",
     "start": "next start",
+    "build:shared": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../Build-SharedInterview.ps1",
+    "update:shared": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../Update-SharedInterview.ps1",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:chat": "playwright test --config=playwright.chat.config.ts",
-    "test:report": "playwright test --config=playwright.report.config.ts"
+    "test:report": "playwright test --config=playwright.report.config.ts",
+    "test:hiring": "playwright test --config=playwright.hiring.config.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.35",

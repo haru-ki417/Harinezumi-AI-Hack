@@ -23,7 +23,7 @@ async function openRoom(page: Page, cameraOff = false) {
       if (message.type === 'frame') publish();
     });
   });
-  await page.goto('/');
+  await page.goto('/vital');
   await page.getByLabel('表示名').fill('自分');
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: '同意して機器の設定へ' }).click();
