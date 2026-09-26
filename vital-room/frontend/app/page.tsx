@@ -14,9 +14,19 @@ import { DeviceSetup, type AudioSettings } from '@/components/DeviceSetup';
 import { getVitalAlert, VITAL_ALERT_THRESHOLDS } from '@/lib/vitalAlerts';
 import { useRoomChat } from '@/hooks/useRoomChat';
 import { RoomChat } from '@/components/RoomChat';
-import { useInterviewReport } from '@/hooks/useInterviewReport';
-import type { ReportSummary } from '@/lib/reportAnalysis';
-import type { Participant, Role, Sample, Vitals } from '@/types';
+import { PreFormStage, AnswersPanel } from '@/components/PreForm';
+import { Feedback } from '@/components/Feedback';
+import { Compare, type CompareRow } from '@/components/Compare';
+import { Organize, type OrganizeRow } from '@/components/Organize';
+import { fetchForm, type PreFormData } from '@/lib/preForm';
+import { fetchFeedback } from '@/lib/feedback';
+import {
+  buildRecord, saveRecordToServer, downloadRecordJSON, downloadRecordCSV,
+  type InterviewRecord,
+} from '@/lib/records';
+import { buildReportSummary, type ReportQuestion, type ReportSummary } from '@/lib/reportAnalysis';
+import { buildInterviewComment, type InterviewComment } from '@/lib/interviewComment';
+import type { Participant, Role, Sample, Vitals, TranscriptSegment } from '@/types';
 
 function randomCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -203,8 +213,13 @@ export default function Home() {
   }, []);
   const [role, setRole] = useState<Role>('candidate');
   const [consent, setConsent] = useState(false);
-  const [stage, setStage] = useState<'lobby' | 'setup' | 'room'>('lobby');
+  const [stage, setStage] = useState<'lobby' | 'prep' | 'setup' | 'room' | 'ended'>('lobby');
+  const [endedSummary, setEndedSummary] = useState<ReportSummary | null>(null);
   const joined = stage === 'room';
+  // 事前質問フォーム
+  const [useForm, setUseForm] = useState(false);           // 面接官: フォームを使うか
+  const [prepQuestions, setPrepQuestions] = useState<string[]>([]);
+  const [form, setForm] = useState<PreFormData>({ enabled: false, questions: [], answers: [] });
   const [cameraSettings, setCameraSettings] = useState<CameraSettings>({
     enabled: true, deviceId: '', background: 'none', brightness: 100, mirrored: true,
   });
@@ -213,19 +228,29 @@ export default function Home() {
   });
   const [customTopic, setCustomTopic] = useState('');
   const [showReport, setShowReport] = useState(false);
-  const [reportSummary, setReportSummary] = useState<ReportSummary | null>(null);
-  const [reportCompleted, setReportCompleted] = useState(false);
-  const [ending, setEnding] = useState(false);
-  const reportSession = useInterviewReport();
+  const [reportData, setReportData] = useState<ReportSummary | null>(null);
+  const [reportComment, setReportComment] = useState<InterviewComment | null>(null);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackSummary, setFeedbackSummary] = useState<ReportSummary | null>(null);
+  const [showCompare, setShowCompare] = useState(false);
+  const [compareRows, setCompareRows] = useState<CompareRow[]>([]);
+  const [endedTranscript, setEndedTranscript] = useState<TranscriptSegment[]>([]);
+  const [endedRecord, setEndedRecord] = useState<InterviewRecord | null>(null);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [showOrganize, setShowOrganize] = useState(false);
+  const [organizeRows, setOrganizeRows] = useState<OrganizeRow[]>([]);
   const [history, setHistory] = useState<Record<string, Sample[]>>({});
+  // 質問(話題)の時間区間ログ。レポートの質問別集計に使う。
+  const [questionLog, setQuestionLog] = useState<ReportQuestion[]>([]);
+  const sessionStartRef = useRef<number>(0);
 
   const canJoin = name.trim().length > 0 && roomId.trim().length > 0 && consent;
   const room = useVitalRoom({ roomId, role, name: name || '参加者', active: joined });
-  const chatAvailable = joined && room.connection === 'open' && room.selfId !== null;
-  const chat = useRoomChat({ roomId, role, name: name.trim().slice(0, 40), active: chatAvailable });
+  const chat = useRoomChat({ roomId, role, name: name.trim().slice(0, 40), active: canJoin });
 
   const camera = useWebcam({
-    active: stage !== 'lobby' && cameraSettings.enabled,
+    active: (stage === 'setup' || stage === 'room') && cameraSettings.enabled,
     deviceId: cameraSettings.deviceId,
     transmitting: joined,
     onFrame: room.sendFrame, intervalMs: 40, quality: 0.6,
@@ -308,45 +333,77 @@ export default function Home() {
     selectSpeaker(audioSettings.outputId);
   }, [audioSettings.deviceId, audioSettings.outputId, selectMic, selectSpeaker]);
 
-  const openSetup = () => {
+  // 参加前: 役割とフォーム有無で prep(事前質問) か setup(機器設定) へ分岐
+  const proceed = async () => {
     if (!canJoin) return;
-    setStage('setup');
+    const f = await fetchForm(roomId);
+    if (role === 'interviewer') {
+      if (useForm) { setPrepQuestions(f.questions); setStage('prep'); }
+      else setStage('setup');
+    } else if (f.questions.length > 0) {
+      setPrepQuestions(f.questions); setStage('prep');
+    } else {
+      setStage('setup');
+    }
   };
   const join = () => {
     if (!canJoin || (cameraSettings.enabled && (!camera.stream || camera.error || camera.loading))) return;
-    reportSession.start();
-    setEnding(false);
-    setShowReport(false);
-    setReportSummary(null);
     setStage('room');
   };
-  const finishInterview = (endedAt?: number) => {
-    const summary = reportSession.snapshot(endedAt);
-    setReportSummary(summary);
-    setReportCompleted(true);
-    setShowReport(summary !== null);
+  // 退出: その時点のデータでスナップショットを作り、終了画面へ(メディア/接続は停止)。
+  // 併せて、この面接の記録(サマリー＋文字起こし＋事前質問＋フィードバック)を
+  // サーバへ保存し、手元DL用に record を保持する。
+  const endInterview = () => {
+    const snap = computeSummary();
+    const transcript = room.transcript.slice();
     if (screenShare.sharing) screenShare.stop();
+    setEndedSummary(snap);
+    setEndedTranscript(transcript); // 退出後の照合用に発言を保存
+    setStage('ended');
+    // 保存(非同期)。フィードバックは既に送信済みなら取り込む。
+    setSaveState('saving');
+    (async () => {
+      const fb = await fetchFeedback(roomId);
+      const record = buildRecord({ roomId, role, summary: snap, transcript, form, feedback: fb });
+      setEndedRecord(record);
+      const res = await saveRecordToServer(roomId, record);
+      setSaveState(res.ok ? 'saved' : 'error');
+    })();
+  };
+  // 手元DL(押した時点の最新フィードバックを取り込んで record を作り直す)
+  const buildLatestRecord = async (): Promise<InterviewRecord> => {
+    const snap = endedSummary ?? computeSummary();
+    const fb = await fetchFeedback(roomId);
+    const record = buildRecord({ roomId, role, summary: snap, transcript: endedTranscript, form, feedback: fb });
+    setEndedRecord(record);
+    return record;
+  };
+  const onDownloadJSON = async () => downloadRecordJSON(await buildLatestRecord());
+  const onDownloadCSV = async () => downloadRecordCSV(await buildLatestRecord());
+  const onResaveServer = async () => {
+    setSaveState('saving');
+    const record = await buildLatestRecord();
+    const res = await saveRecordToServer(roomId, record);
+    setSaveState(res.ok ? 'saved' : 'error');
+  };
+  // 終了画面からロビーへ(全リセット)
+  const backToLobby = () => {
     setStage('lobby');
     setHistory({});
-    setEnding(false);
+    setQuestionLog([]);
+    setEndedSummary(null);
+    setEndedTranscript([]);
+    setEndedRecord(null);
+    setSaveState('idle');
+    setReportData(null);
+    setReportComment(null);
+    setFeedbackSummary(null);
+    setShowReport(false);
+    setShowFeedback(false);
+    setShowCompare(false);
+    setShowOrganize(false);
+    sessionStartRef.current = 0;
   };
-  const leave = () => finishInterview();
-  const previewReport = () => {
-    setReportSummary(reportSession.snapshot());
-    setReportCompleted(false);
-    setShowReport(true);
-  };
-
-  const { record: recordReport } = reportSession;
-  useEffect(() => {
-    if (joined) recordReport(room.participants, room.questions, room.topic, room.joinedAt);
-  }, [joined, room.participants, room.questions, room.topic, room.joinedAt, recordReport]);
-  // Capture the final server snapshot before disconnecting devices and chat.
-  const finishRef = useRef(finishInterview);
-  finishRef.current = finishInterview;
-  useEffect(() => {
-    if (joined && room.endedAt !== null) finishRef.current(room.endedAt);
-  }, [joined, room.endedAt]);
 
   // 時系列の蓄積(各ブロードキャストごとに全参加者を1サンプル追記)
   useEffect(() => {
@@ -361,6 +418,7 @@ export default function Home() {
           bpm: p.vitals?.current_bpm ?? 0,
           stress: p.vitals?.stress ?? 0,
           topic: room.topic,
+          confidence: p.vitals?.confidence,
         });
         if (arr.length > 1200) arr.shift();
         next[p.client_id] = arr;
@@ -368,6 +426,36 @@ export default function Home() {
       return next;
     });
   }, [room.participants, room.topic, joined]);
+
+  // 質問(話題)の時間区間を記録(レポートの質問別集計に使う)
+  useEffect(() => {
+    if (!joined) { sessionStartRef.current = 0; setQuestionLog([]); return; }
+    const now = Date.now();
+    const topic = room.topic || '導入';
+    setQuestionLog((prev) => {
+      if (prev.length === 0) {
+        sessionStartRef.current = now;
+        return [{ id: 1, label: 'Q1', topic, startedAt: now, endedAt: now }];
+      }
+      const last = prev[prev.length - 1];
+      if (last.topic === topic) return prev; // 話題変化なし
+      return [
+        ...prev.slice(0, -1),
+        { ...last, endedAt: now },
+        { id: prev.length + 1, label: `Q${prev.length + 1}`, topic, startedAt: now, endedAt: now },
+      ];
+    });
+  }, [joined, room.topic]);
+
+  // 入室中は事前質問フォーム(質問＋回答)を定期取得(相手の回答が後から届く場合に追従)
+  useEffect(() => {
+    if (!joined) return;
+    let alive = true;
+    const load = async () => { const f = await fetchForm(roomId); if (alive) setForm(f); };
+    load();
+    const t = setInterval(load, 8000);
+    return () => { alive = false; clearInterval(t); };
+  }, [joined, roomId]);
 
   const others = useMemo(
     () => room.participants.filter((p) => p.client_id !== room.selfId),
@@ -381,6 +469,75 @@ export default function Home() {
 
   const stressOf = (cid: string, n: number) =>
     (history[cid] ?? []).slice(-n).map((s) => s.stress);
+
+  // その時点までのデータで集計サマリーを構築(レポート/フィードバック共通)
+  const computeSummary = (): ReportSummary => {
+    const now = Date.now();
+    const start = sessionStartRef.current || (now - 1);
+    const base: ReportQuestion[] = questionLog.length
+      ? questionLog
+      : [{ id: 1, label: 'Q1', topic: '全体', startedAt: start, endedAt: now }];
+    const questions = base.map((q, i) => (i === base.length - 1 ? { ...q, endedAt: now } : q));
+    const parts = room.participants.length ? room.participants : [selfCard];
+    return buildReportSummary({
+      sessionId: `${roomId}-${start}`,
+      startedAt: start, endedAt: now, questions, participants: parts, history,
+    });
+  };
+  const openReport = () => {
+    const snap = computeSummary();
+    setReportData(snap);
+    setReportComment(buildInterviewComment({ summary: snap, organizeRows: buildOrganizeRows(room.transcript), role }));
+    setShowReport(true);
+  };
+  const openFeedback = () => { setFeedbackSummary(computeSummary()); setShowFeedback(true); };
+
+  // ES(事前回答) × 面接発言 の照合行を構築(AIなし・話題区間で対応付け)
+  const buildCompareRows = (transcript: TranscriptSegment[]): CompareRow[] => {
+    const now = Date.now();
+    const ql = questionLog.map((q, i) => (i === questionLog.length - 1 ? { ...q, endedAt: now } : q));
+    const candAns = form.answers[0]?.answers ?? [];
+    return form.questions.map((q, i) => {
+      const intervals = ql.filter((x) => x.topic === q);
+      const segments = transcript
+        .filter((s) => s.role === 'candidate'
+          && intervals.some((iv) => s.ts * 1000 >= iv.startedAt && s.ts * 1000 <= iv.endedAt))
+        .map((s) => s.text);
+      return { question: q, esAnswer: candAns[i] ?? '', segments };
+    });
+  };
+  const openCompare = () => {
+    const transcript = stage === 'ended' ? endedTranscript : room.transcript;
+    setCompareRows(buildCompareRows(transcript));
+    setShowCompare(true);
+  };
+
+  // 面接まとめ: 項目(質問/話題)ごとに発言を整理し、カバー状況を出す(AIなし)
+  const buildOrganizeRows = (transcript: TranscriptSegment[]): OrganizeRow[] => {
+    const now = Date.now();
+    const ql = questionLog.map((q, i) => (i === questionLog.length - 1 ? { ...q, endedAt: now } : q));
+    const planned = form.questions.length ? form.questions : TOPIC_PRESETS;
+    const discussed = Array.from(new Set(ql.map((x) => x.topic)))
+      .filter((t) => t && t !== '導入' && !planned.includes(t));
+    const items = [...planned, ...discussed];
+    return items.map((topic) => {
+      const intervals = ql.filter((x) => x.topic === topic);
+      const segments = transcript
+        .filter((s) => intervals.some((iv) => s.ts * 1000 >= iv.startedAt && s.ts * 1000 <= iv.endedAt))
+        .map((s) => ({ role: s.role, name: s.name, text: s.text }));
+      return {
+        item: topic,
+        planned: planned.includes(topic),
+        covered: segments.some((s) => s.role === 'candidate'),
+        segments,
+      };
+    });
+  };
+  const openOrganize = () => {
+    const transcript = stage === 'ended' ? endedTranscript : room.transcript;
+    setOrganizeRows(buildOrganizeRows(transcript));
+    setShowOrganize(true);
+  };
 
   // 下部タイムライン(全参加者のストレスを重ね描き)＋トピック切替マーカー
   const timelineSeries: Series[] = room.participants.map((p, i) => ({
@@ -398,25 +555,35 @@ export default function Home() {
     return ms;
   }, [history, room.selfId]);
 
-  const reportPanel = showReport && reportSummary && (
-    <Report summary={reportSummary} completed={reportCompleted} onClose={() => setShowReport(false)} />
-  );
-
   const chatPanel = (
     <header className={styles.toolbar} aria-label="ルーム操作">
       <Brand compact />
       <div className={styles.roomMeta}>
-        {chatAvailable && <RoomChat chat={chat} roomId={roomId} />}
+        <RoomChat chat={chat} roomId={roomId} />
         <span className={styles.roomCode} title={`ルーム ${roomId}`}>ルーム {roomId}</span>
         {joined ? (
           <>
-            <button type="button" className={styles.reportBtn} onClick={previewReport}>レポート</button>
-            <button type="button" className={styles.leaveBtn} onClick={() => leave()}>退出</button>
+            <button type="button" className={styles.reportBtn} onClick={openReport}>レポート</button>
+            <button type="button" className={styles.reportBtn} onClick={openFeedback}>フィードバック</button>
+            <button type="button" className={styles.leaveBtn} onClick={() => setConfirmLeave(true)}>退出</button>
           </>
-        ) : (<>{reportSummary && reportCompleted ? <button type="button" className={styles.reportBtn} onClick={() => setShowReport(true)}>前回のレポート</button> : <span aria-hidden="true" />}<span aria-hidden="true" /></>)}
+        ) : (<><span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" /></>)}
       </div>
     </header>
   );
+
+  if (stage === 'prep') {
+    return (
+      <>
+        <PreFormStage
+          mode={role === 'interviewer' ? 'edit' : 'answer'}
+          roomId={roomId} name={name} questions={prepQuestions}
+          onBack={() => setStage('lobby')}
+          onDone={() => setStage('setup')} />
+        {chatPanel}
+      </>
+    );
+  }
 
   if (stage === 'setup') {
     return (
@@ -425,72 +592,161 @@ export default function Home() {
           onCameraChange={setCameraSettings} onAudioChange={setAudioSettings}
           onBack={() => setStage('lobby')} onJoin={join} />
         {chatPanel}
-        {reportPanel}
       </>
+    );
+  }
+
+  if (stage === 'ended') {
+    return (
+      <><div className={styles.lobbyWrap}>
+        <div className={`${styles.lobby} ${styles.endedLg}`}>
+          <div className={styles.endedGrid}>
+            <div className={styles.endedMain}>
+              <Brand />
+              <p className={styles.lead}>面接を終了しました</p>
+              <h1 className={styles.title}>お疲れさまでした</h1>
+              <p className={styles.lead}>
+                この面接の<b>レポート（データ分析）</b>と<b>フィードバック（評価・振り返り）</b>を確認できます。
+              </p>
+              <div className={styles.endedActions}>
+                <button type="button" className={styles.joinBtn}
+                  onClick={() => {
+                    setReportData(endedSummary);
+                    if (endedSummary) setReportComment(buildInterviewComment({ summary: endedSummary, organizeRows: buildOrganizeRows(endedTranscript), role }));
+                    setShowReport(true);
+                  }}>レポートを見る</button>
+                <button type="button" className={styles.joinBtn}
+                  onClick={() => { setFeedbackSummary(endedSummary); setShowFeedback(true); }}>フィードバックを見る</button>
+              </div>
+              <div className={styles.endedSecondary}>
+                <button type="button" className={styles.ghostBtn} onClick={openOrganize}>面接まとめを見る</button>
+                {role === 'interviewer' && form.questions.length > 0 && (
+                  <button type="button" className={styles.ghostBtn} onClick={openCompare}>ES × 発言を照合</button>
+                )}
+                <button type="button" className={styles.ghostBtn} onClick={backToLobby}>ロビーに戻る</button>
+              </div>
+            </div>
+
+            <section className={styles.saveBox}>
+              <div className={styles.saveHead}>
+                <span className={styles.saveTitle}>この面接の記録を保存</span>
+                <span className={`${styles.saveStatus} ${
+                  saveState === 'saved' ? styles.saveOk
+                  : saveState === 'error' ? styles.saveErr
+                  : saveState === 'saving' ? styles.saveWait : ''}`}>
+                  {saveState === 'saving' ? 'サーバへ保存中…'
+                    : saveState === 'saved' ? `サーバに保存しました${endedRecord ? `（${endedRecord.sessionId}）` : ''}`
+                    : saveState === 'error' ? 'サーバ保存に失敗（手元DLは可能）'
+                    : ''}
+                </span>
+              </div>
+              <p className={styles.saveNote}>
+                心拍・ストレス・質問内容・回答時間・文字起こし・事前質問・評価をまとめて保存します。
+                JSONは全データ、CSVは質問別の指標（平均・最大・基準超過）です。
+              </p>
+              <div className={styles.saveBtns}>
+                <button type="button" className={styles.saveBtnPrimary} onClick={onDownloadJSON}>JSONをダウンロード（全データ）</button>
+                <button type="button" className={styles.saveBtnPrimary} onClick={onDownloadCSV}>CSVをダウンロード（質問別）</button>
+                <button type="button" className={styles.ghostBtn} onClick={onResaveServer}
+                  disabled={saveState === 'saving'}>サーバに再保存</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      {showReport && reportData && (
+        <Report summary={reportData} completed interviewComment={reportComment} onClose={() => setShowReport(false)} />
+      )}
+      {showFeedback && feedbackSummary && (
+        <Feedback role={role === 'interviewer' ? 'interviewer' : 'candidate'}
+          roomId={roomId} summary={feedbackSummary} onClose={() => setShowFeedback(false)} />
+      )}
+      {showCompare && (
+        <Compare rows={compareRows} onClose={() => setShowCompare(false)} />
+      )}
+      {showOrganize && (
+        <Organize rows={organizeRows} role={role === 'interviewer' ? 'interviewer' : 'candidate'}
+          onClose={() => setShowOrganize(false)} />
+      )}
+      {chatPanel}</>
     );
   }
 
   if (stage === 'lobby') {
     return (
       <><div className={styles.lobbyWrap}>
-        <div className={styles.lobby}>
-          <Brand />
-          <p className={styles.lead}>ステップ 1 / 3 · 名前と同意</p>
-          <h1 className={styles.title}>本音マッチング面接</h1>
-          <p className={styles.lead}>
-            カメラ映像から自分の心拍・HRV・ストレスを推定し、同じルームの相手と
-            <b>お互いに見える形で</b>共有します。緊張の高さは<b>嘘や善悪の判定ではなく</b>、
-            率直に話すきっかけとして使います。全員の同意が前提の透明なモードです。
-          </p>
-          <div className={styles.lobbyFeatures}>
-            <span className={styles.feat}>非接触で心拍を計測</span>
-            <span className={styles.feat}>双方向で透明に共有</span>
-            <span className={styles.feat}>チャット・画面共有</span>
-          </div>
-
-          <label className={styles.field}>
-            <span>表示名</span>
-            <input className={styles.input} maxLength={40} value={name} onChange={(e) => setName(e.target.value)} placeholder="例: 高橋" />
-          </label>
-
-          <label className={styles.field}>
-            <span>ルームコード（相手と同じ値にする）</span>
-            <div className={styles.roomRow}>
-              <input className={styles.input} maxLength={100} value={roomId} onChange={(e) => setRoomId(e.target.value.toUpperCase())} />
-              <button type="button" className={styles.ghostBtn} onClick={() => setRoomId(randomCode())}>再生成</button>
+        <div className={`${styles.lobby} ${styles.lobbyLg}`}>
+          <div className={styles.lobbyGrid}>
+            <div className={styles.lobbyHero}>
+              <Brand />
+              <p className={styles.lead}>ステップ 1 / 3 · 名前と同意</p>
+              <h1 className={styles.title}>本音マッチング面接</h1>
+              <p className={styles.lead}>
+                カメラ映像から自分の心拍・HRV・ストレスを推定し、同じルームの相手と
+                <b>お互いに見える形で</b>共有します。緊張の高さは<b>嘘や善悪の判定ではなく</b>、
+                率直に話すきっかけとして使います。全員の同意が前提の透明なモードです。
+              </p>
+              <div className={styles.lobbyFeatures}>
+                <span className={styles.feat}>非接触で心拍を計測</span>
+                <span className={styles.feat}>双方向で透明に共有</span>
+                <span className={styles.feat}>チャット・画面共有</span>
+              </div>
             </div>
-          </label>
 
-          <div className={styles.field}>
-            <span>役割</span>
-            <div className={styles.roleRow}>
-              <button type="button" className={`${styles.roleBtn} ${role === 'interviewer' ? styles.roleOn : ''}`}
-                onClick={() => setRole('interviewer')}>面接官</button>
-              <button type="button" className={`${styles.roleBtn} ${role === 'candidate' ? styles.roleOn : ''}`}
-                onClick={() => setRole('candidate')}>就活生</button>
+            <div className={styles.lobbyForm}>
+              <label className={styles.field}>
+                <span>表示名</span>
+                <input className={styles.input} maxLength={40} value={name} onChange={(e) => setName(e.target.value)} placeholder="例: 高橋" />
+              </label>
+
+              <label className={styles.field}>
+                <span>ルームコード（相手と同じ値にする）</span>
+                <div className={styles.roomRow}>
+                  <input className={styles.input} maxLength={100} value={roomId} onChange={(e) => setRoomId(e.target.value.toUpperCase())} />
+                  <button type="button" className={styles.ghostBtn} onClick={() => setRoomId(randomCode())}>再生成</button>
+                </div>
+              </label>
+
+              <div className={styles.field}>
+                <span>役割</span>
+                <div className={styles.roleRow}>
+                  <button type="button" className={`${styles.roleBtn} ${role === 'interviewer' ? styles.roleOn : ''}`}
+                    onClick={() => setRole('interviewer')}>面接官</button>
+                  <button type="button" className={`${styles.roleBtn} ${role === 'candidate' ? styles.roleOn : ''}`}
+                    onClick={() => setRole('candidate')}>就活生</button>
+                </div>
+              </div>
+
+              {role === 'interviewer' && (
+                <label className={styles.consentCheck} style={{ marginBottom: 16 }}>
+                  <input type="checkbox" checked={useForm} onChange={(e) => setUseForm(e.target.checked)} />
+                  <span>事前質問フォームを使う（ESを踏まえた深掘り質問を用意し、候補者に事前回答してもらう）</span>
+                </label>
+              )}
+
+              <div className={styles.consentBox}>
+                <p className={styles.consentText}>
+                  このアプリは、あなたのカメラ映像から<b>あなた自身の</b>心拍・心拍変動・
+                  ストレスの目安を推定し、同じルームの参加者に数値として表示します
+                  （相手の映像は共有されません）。また、面接官が<b>文字起こし</b>をONにした場合、
+                  あなたのマイク音声は端末内で認識され<b>確定テキストのみ</b>が記録・共有されます
+                  （音声そのものは送られません／ON中は全員に「文字起こし中」と表示されます）。
+                  医療目的ではなく、精度は環境に左右されます。計測はいつでも「退出」で停止できます。
+                </p>
+                <label className={styles.consentCheck}>
+                  <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                  <span>上記に同意し、自分のバイタルを共有することを承諾します</span>
+                </label>
+              </div>
+
+              <button type="button" className={styles.joinBtn} disabled={!canJoin} onClick={proceed}>
+                {role === 'interviewer' && useForm ? '同意して事前質問の作成へ' : '同意して次へ'}
+              </button>
             </div>
           </div>
-
-          <div className={styles.consentBox}>
-            <p className={styles.consentText}>
-              このアプリは、あなたのカメラ映像から<b>あなた自身の</b>心拍・心拍変動・
-              ストレスの目安を推定し、同じルームの参加者に数値として表示します
-              （相手の映像は共有されません）。また、面接官が<b>文字起こし</b>をONにした場合、
-              あなたのマイク音声は端末内で認識され<b>確定テキストのみ</b>が記録・共有されます
-              （音声そのものは送られません／ON中は全員に「文字起こし中」と表示されます）。
-              面接終了後は質問ごとの集計値を分析し、AI接続時は外部AIに集計値を送ってコメントを作成します
-              （氏名・映像・音声・文字起こしはAIに送信しません）。
-              医療目的ではなく、精度は環境に左右されます。計測はいつでも「退出」で停止できます。
-            </p>
-            <label className={styles.consentCheck}>
-              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-              <span>上記に同意し、自分のバイタルを共有することを承諾します</span>
-            </label>
-          </div>
-
-          <button type="button" className={styles.joinBtn} disabled={!canJoin} onClick={openSetup}>同意して機器の設定へ</button>
         </div>
-      </div>{chatPanel}{reportPanel}</>
+      </div>{chatPanel}</>
     );
   }
 
@@ -639,31 +895,25 @@ export default function Home() {
           </span>
           {room.transcribe && <span className={styles.recBadge}>● 文字起こし中</span>}
         </div>
-        {role === 'interviewer' && <button type="button" className={styles.leaveBtn}
-          disabled={room.connection !== 'open' || ending}
-          onClick={() => { setEnding(true); room.endSession(); }}>
-          {ending ? '終了処理中…' : '面接を終了'}
-        </button>}
       </header>
 
       {/* トピックバー */}
       <div className={styles.topicBar}>
         <span className={styles.topicLabel}>現在の話題</span>
-        <span className={styles.topicNow}>{room.questionId > 0 ? `Q${room.questionId} · ` : ''}{room.topic || '未設定'}</span>
+        <span className={styles.topicNow}>{room.topic || '未設定'}</span>
         {role === 'interviewer' && (
           <div className={styles.topicControls}>
-            {TOPIC_PRESETS.map((t) => (
-              <button key={t} type="button"
+            {(form.questions.length ? form.questions : TOPIC_PRESETS).map((t, i) => (
+              <button key={i} type="button" title={t}
                 className={`${styles.topicChip} ${room.topic === t ? styles.topicChipOn : ''}`}
-                disabled={room.questions.length >= 200}
-                onClick={() => room.sendTopic(t)}>{t}</button>
+                onClick={() => room.sendTopic(t)}>
+                {form.questions.length ? `Q${i + 1}: ${t.length > 12 ? t.slice(0, 12) + '…' : t}` : t}
+              </button>
             ))}
             <input className={styles.topicInput} value={customTopic}
-              disabled={room.questions.length >= 200}
               onChange={(e) => setCustomTopic(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && customTopic.trim()) { room.sendTopic(customTopic.trim()); setCustomTopic(''); } }}
               placeholder="自由入力→Enter" />
-            {room.questions.length >= 200 && <span role="status">質問は1面接200件までです。</span>}
           </div>
         )}
         {role === 'interviewer' && (
@@ -679,6 +929,18 @@ export default function Home() {
               <option value="en-US">English</option>
             </select>
           </div>
+        )}
+      </div>
+
+      {/* 事前質問と回答(面接官が参照) */}
+      {role === 'interviewer' && form.questions.length > 0 && (
+        <AnswersPanel questions={form.questions} answers={form.answers} />
+      )}
+      {/* まとめ・照合ツール */}
+      <div className={styles.compareBar}>
+        <button type="button" className={styles.reportBtn} onClick={openOrganize}>面接まとめ</button>
+        {role === 'interviewer' && form.questions.length > 0 && (
+          <button type="button" className={styles.reportBtn} onClick={openCompare}>ES × 発言を照合</button>
         )}
       </div>
 
@@ -780,7 +1042,35 @@ export default function Home() {
         </section>
       )}
 
-      {reportPanel}
+      {showReport && reportData && (
+        <Report summary={reportData} completed interviewComment={reportComment} onClose={() => setShowReport(false)} />
+      )}
+
+      {showFeedback && feedbackSummary && (
+        <Feedback role={role === 'interviewer' ? 'interviewer' : 'candidate'}
+          roomId={roomId} summary={feedbackSummary} onClose={() => setShowFeedback(false)} />
+      )}
+      {showCompare && (
+        <Compare rows={compareRows} onClose={() => setShowCompare(false)} />
+      )}
+      {showOrganize && (
+        <Organize rows={organizeRows} role={role === 'interviewer' ? 'interviewer' : 'candidate'}
+          onClose={() => setShowOrganize(false)} />
+      )}
+      {confirmLeave && (
+        <div className={styles.confirmOverlay} onClick={() => setConfirmLeave(false)}>
+          <div className={styles.confirmCard} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <p className={styles.confirmTitle}>ミーティングを退出しますか？</p>
+            <p className={styles.confirmText}>
+              退出すると計測・共有は停止します。退出後もレポートとフィードバックは確認できます。
+            </p>
+            <div className={styles.confirmBtns}>
+              <button type="button" className={styles.reportBtn} onClick={() => setConfirmLeave(false)}>キャンセル</button>
+              <button type="button" className={styles.leaveBtn} onClick={() => { setConfirmLeave(false); endInterview(); }}>退出する</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>{chatPanel}</>
   );
 }

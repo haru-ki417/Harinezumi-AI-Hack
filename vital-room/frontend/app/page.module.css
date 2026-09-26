@@ -1,41 +1,7 @@
 /* =====================================================================
    Vital Room — デザインシステム
-   CSS変数は :root が使えない(CSS Modules)ため、全画面のルートである
-   .lobbyWrap / .roomWrap に定義する(子孫に継承される)。
+   デザイントークンは globals.css の :root に集約（全モジュールで継承）。
    ===================================================================== */
-.lobbyWrap, .roomWrap, .toolbar {
-  /* 面 */
-  --bg:          #0e0f14;
-  --bg-grad-1:   #14161d;
-  --bg-grad-2:   #0c0d12;
-  --surface:     #191b22;
-  --surface-2:   #1f2230;
-  --surface-3:   #262a39;
-  --line:        #2a2d38;
-  --line-2:      #363a47;
-  /* 文字 */
-  --text:        #edeff4;
-  --text-dim:    #b6bac4;
-  --text-mute:   #838895;
-  /* アクセント */
-  --accent:      #5b8cff;
-  --accent-2:    #7aa2ff;
-  --accent-soft: rgba(91, 140, 255, 0.16);
-  --accent-line: rgba(91, 140, 255, 0.45);
-  /* 状態 */
-  --ok:          #34d07f;
-  --warn:        #e7c15c;
-  --danger:      #ec5f5f;
-  --heart:       #ff5c7a;
-  --topic:       #ffce8a;
-  /* 形 */
-  --r-s: 8px; --r-m: 12px; --r-l: 16px; --r-xl: 20px;
-  --sh-1: 0 4px 18px rgba(0, 0, 0, 0.30);
-  --sh-2: 0 16px 48px rgba(0, 0, 0, 0.50);
-  --ring: 0 0 0 3px var(--accent-soft);
-  --ease: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
-  --font: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
-}
 
 /* ===== 共通 ===== */
 .hidden { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; z-index: -1; }
@@ -263,6 +229,52 @@
   background: var(--surface-3); border: 1px solid var(--line-2); color: var(--text); cursor: pointer; transition: background var(--ease);
 }
 .testBtn:hover { background: #303546; }
+
+/* ===== 終了画面のアクション ===== */
+.endedActions { display: flex; gap: 10px; margin-bottom: 12px; }
+.endedActions > button { flex: 1 1 0; }
+
+/* 面接記録の保存(終了画面) */
+.saveBox {
+  margin: 4px 0 12px; padding: 14px 15px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-m);
+}
+.saveHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.saveTitle { font-size: 13px; font-weight: 700; color: var(--text); }
+.saveStatus { font-size: 11.5px; font-weight: 600; color: var(--text-mute); }
+.saveOk { color: var(--ok); }
+.saveErr { color: var(--danger); }
+.saveWait { color: var(--warn); }
+.saveNote { margin: 0 0 12px; font-size: 12px; line-height: 1.7; color: var(--text-dim); }
+.saveBtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.saveBtns > button { flex: 1 1 160px; padding: 11px 12px; }
+.saveBtnPrimary {
+  border-radius: var(--r-s); border: 1px solid var(--accent-line);
+  background: var(--accent-soft); color: var(--accent-2);
+  font-size: 13px; font-weight: 650; cursor: pointer; transition: background var(--ease), transform var(--ease);
+}
+.saveBtnPrimary:hover { background: rgba(91, 140, 255, 0.24); transform: translateY(-1px); }
+.saveBtnPrimary:active { transform: translateY(0); }
+
+/* まとめ・照合ツールの行 */
+.compareBar { max-width: 1180px; margin: 0 auto 14px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+
+/* ===== 退出確認ダイアログ ===== */
+.confirmOverlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(6, 7, 10, 0.66); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.confirmCard {
+  width: 100%; max-width: 400px; text-align: center;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--line); border-radius: var(--r-l);
+  padding: 26px 24px; box-shadow: var(--sh-2);
+}
+.confirmTitle { margin: 0 0 8px; font-size: 17px; font-weight: 700; color: var(--text); }
+.confirmText { margin: 0 0 20px; font-size: 13px; line-height: 1.6; color: var(--text-dim); }
+.confirmBtns { display: flex; gap: 10px; }
+.confirmBtns > button { flex: 1 1 0; padding: 11px; }
 
 /* ===== 状態ランプ ===== */
 .lampRow {
@@ -499,8 +511,8 @@
 }
 .toolbar .roomCode { color: var(--text-dim); }
 .roomMeta {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
-  align-items: center; gap: 10px; height: 40px; width: min(520px, 100%);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center; gap: 10px; height: 40px; width: min(600px, 100%);
 }
 .roomMeta > button { height: 38px; }
 .roomCode { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -528,3 +540,194 @@
 /* LineChart(SVG)の高さを固定して崩れを防ぐ */
 .spark svg { height: 48px; }
 .timeline svg { height: 120px; }
+
+/* =====================================================================
+   ブラッシュアップ・レイヤー（視覚的な仕上げ）
+   既存ルールの後に置き、同じ詳細度で上書き/追加する。レイアウトは変えない。
+   ===================================================================== */
+
+/* --- 追加トークン --- */
+.lobbyWrap, .roomWrap, .toolbar {
+  --sh-card:       0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.34);
+  --sh-card-hover: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 18px 42px rgba(0, 0, 0, 0.46);
+  --grad-accent:   linear-gradient(135deg, #7aa2ff, #8a6cff 62%, #b57cff);
+}
+
+/* --- 背景を多層グラデーションでリッチに --- */
+.roomWrap {
+  background:
+    radial-gradient(1000px 520px at 84% -12%, rgba(91, 140, 255, 0.13), transparent 60%),
+    radial-gradient(760px 480px at 6% 6%, rgba(138, 108, 255, 0.08), transparent 55%),
+    linear-gradient(180deg, var(--bg-grad-1), var(--bg-grad-2));
+}
+.lobbyWrap {
+  background:
+    radial-gradient(820px 480px at 50% -8%, rgba(91, 140, 255, 0.18), transparent 60%),
+    radial-gradient(520px 400px at 12% 112%, rgba(138, 108, 255, 0.11), transparent 60%),
+    linear-gradient(180deg, var(--bg-grad-1), var(--bg-grad-2));
+}
+
+/* --- 入場アニメーション --- */
+@keyframes riseIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.lobby { animation: riseIn 0.42s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+.card { animation: riseIn 0.36s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+.stage, .timeline, .transcript { animation: riseIn 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+.confirmCard { animation: riseIn 0.24s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+
+/* --- カードの質感（奥行き・ホバーで持ち上げ） --- */
+.card {
+  box-shadow: var(--sh-card);
+  transition: border-color var(--ease), transform var(--ease), box-shadow var(--ease);
+}
+.card:hover { transform: translateY(-2px); border-color: var(--line-2); box-shadow: var(--sh-card-hover); }
+.cardSelf, .cardSelf:hover { border-color: var(--accent-line); }
+.waiting:hover { transform: none; box-shadow: none; }
+
+/* --- 見出し・ブランドのグラデーション --- */
+.title {
+  background: linear-gradient(180deg, #ffffff, #c6d2ff);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+}
+.brandName {
+  background: linear-gradient(180deg, #ffffff, #cdd6ee);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+}
+.brandMark { background: var(--grad-accent); box-shadow: 0 4px 16px rgba(120, 108, 255, 0.45); }
+
+/* --- BPM 数字にわずかなグラデーション（異常時は赤を優先） --- */
+.bpmNum {
+  background: linear-gradient(180deg, #ffffff, #d2dcff);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+}
+.bpmNum.metricAlert {
+  background: none; color: #ff9292; -webkit-text-fill-color: #ff9292;
+}
+
+/* --- メーターの質感（内側の影＋光沢） --- */
+.meterTrack { box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5); }
+.meterFill { position: relative; overflow: hidden; }
+.meterFill::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 46%);
+}
+.levelTrack { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5); }
+
+/* --- ステータスピル/バッジの微調整 --- */
+.statusPill, .roomCode { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset; }
+.feat { transition: transform var(--ease), background var(--ease); }
+.feat:hover { transform: translateY(-1px); background: rgba(91, 140, 255, 0.24); }
+
+/* --- ボタンの押下フィードバックを統一 --- */
+.reportBtn:active, .ghostBtn:active, .dlBtn:active,
+.sttToggle:active, .topicChip:active, .testBtn:active, .bgToggle:active { transform: scale(0.97); }
+.reportBtn, .ghostBtn, .dlBtn, .sttToggle, .topicChip, .testBtn, .bgToggle {
+  transition: background var(--ease), border-color var(--ease), color var(--ease), transform var(--ease);
+}
+.leaveBtn:active { transform: scale(0.98); }
+
+/* --- スクロールバーの統一（縦スクロールする面） --- */
+.transcriptBody { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+
+/* --- 上部ツールバー/ヘッダーの分離感 --- */
+.toolbar { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 20px rgba(0, 0, 0, 0.28); }
+
+/* --- 画面共有ステージのアクセント縁を強調 --- */
+.stage { box-shadow: 0 0 0 1px var(--accent-line), 0 14px 40px rgba(91, 140, 255, 0.12); }
+
+/* --- 新しいアニメーションも「動きを減らす」設定を尊重 --- */
+@media (prefers-reduced-motion: reduce) {
+  .lobby, .card, .stage, .timeline, .transcript, .confirmCard { animation: none; }
+  .card:hover, .feat:hover { transform: none; }
+}
+
+/* =====================================================================
+   ブラッシュアップ v2 — 専用フォント / ヒーロー刷新 / ガラス質感 / 配色強化
+   ===================================================================== */
+
+/* 見出し・数値に欧文ディスプレイフォント(Sora) */
+.title, .brandName { font-family: var(--font-display); letter-spacing: 0.2px; }
+.bpmNum { font-family: var(--font-display); }
+
+/* ロビーのヒーローを刷新（大きめ・ガラス・内側グロー・虹色トップライン） */
+.lobby {
+  max-width: 500px;
+  background:
+    radial-gradient(420px 220px at 82% -12%, rgba(181, 124, 255, 0.16), transparent 65%),
+    linear-gradient(180deg, var(--glass), var(--glass-2));
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  border-color: var(--glass-line);
+  box-shadow: var(--sh-2), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+.lobby::before {
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent), var(--accent-3));
+}
+.lobby::after {
+  content: ''; position: absolute; right: -70px; bottom: -70px;
+  width: 220px; height: 220px; pointer-events: none;
+  background: radial-gradient(circle, rgba(91, 140, 255, 0.22), transparent 70%);
+}
+.title { font-size: 27px; font-weight: 800; margin-top: 8px; }
+
+/* 主要パネルをガラス化（背面のグラデが透ける＝奥行き） */
+.card, .timeline, .transcript, .topicNow {
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.card, .timeline, .transcript {
+  background: linear-gradient(180deg, var(--glass), var(--glass-2));
+  border-color: var(--glass-line);
+}
+.cardSelf {
+  background:
+    radial-gradient(320px 180px at 100% 0%, rgba(91, 140, 255, 0.14), transparent 60%),
+    linear-gradient(180deg, var(--glass), var(--glass-2));
+}
+.waiting { background: rgba(255, 255, 255, 0.015); }
+
+/* ヘッダー/ツールバーのガラス感 */
+.toolbar, .roomBar {
+  background: var(--glass-2);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+
+/* アクセントの効いたボタン・選択状態 */
+.joinBtn { background: var(--grad-accent); box-shadow: 0 10px 26px rgba(120, 108, 255, 0.40); }
+.joinBtn:not(:disabled):hover { box-shadow: 0 14px 34px rgba(120, 108, 255, 0.52); }
+.roleOn { background: linear-gradient(180deg, rgba(122, 162, 255, 0.30), rgba(91, 140, 255, 0.15)); }
+.feat { background: rgba(91, 140, 255, 0.12); border-color: rgba(122, 162, 255, 0.40); }
+
+/* ライブドットにやわらかな発光リング */
+.conn_open .liveDot { box-shadow: 0 0 0 3px rgba(52, 208, 127, 0.18), 0 0 10px var(--ok); }
+
+@media (prefers-reduced-motion: reduce) {
+  .lobby::after { display: none; }
+}
+
+/* =====================================================================
+   PC前提レイアウト — ロビー/終了画面を横幅を活かした2カラムに
+   ===================================================================== */
+.lobbyLg { max-width: 940px; }
+.lobbyGrid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 32px; align-items: center; }
+.lobbyHero { position: relative; z-index: 1; }
+.lobbyHero .title { font-size: 30px; margin-bottom: 12px; }
+.lobbyHero .lobbyFeatures { margin-bottom: 0; }
+.lobbyForm { display: flex; flex-direction: column; padding-left: 32px; border-left: 1px solid var(--glass-line); }
+.lobbyForm .field:first-child { margin-top: 0; }
+
+.endedLg { max-width: 980px; }
+.endedGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+.endedMain { display: flex; flex-direction: column; }
+.endedSecondary { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.endedSecondary > button { width: 100%; padding: 12px; }
+.endedGrid .saveBox { margin: 0; align-self: stretch; }
+
+/* タブレット以下は縦積み（スマホでも破綻しない） */
+@media (max-width: 820px) {
+  .lobbyLg, .endedLg { max-width: 480px; }
+  .lobbyGrid, .endedGrid { grid-template-columns: 1fr; gap: 22px; }
+  .lobbyForm { padding-left: 0; border-left: none; }
+  .lobbyHero .title { font-size: 26px; }
+}

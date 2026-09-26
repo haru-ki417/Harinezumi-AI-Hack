@@ -1,0 +1,122 @@
+.wrap {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 84px 20px 28px;
+  background:
+    radial-gradient(900px 500px at 50% -10%, rgba(91, 140, 255, 0.16), transparent 60%),
+    linear-gradient(180deg, #14161d, #0c0d12);
+  color: #edeff4; font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+}
+.card {
+  width: 100%; max-width: 560px; position: relative;
+  background: linear-gradient(180deg, #1f2230, #191b22);
+  border: 1px solid #2a2d38; border-radius: 20px;
+  padding: 28px 28px 30px; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.card::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 3px;
+  background: linear-gradient(90deg, #5b8cff, #8a6cff, transparent);
+  border-radius: 20px 20px 0 0;
+}
+.step { margin: 4px 0 8px; font-size: 12px; font-weight: 600; color: #7aa2ff; }
+.title { margin: 0 0 10px; font-size: 22px; font-weight: 750; }
+.lead { margin: 0 0 18px; font-size: 13px; line-height: 1.7; color: #b6bac4; }
+
+.list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+.qRow { display: flex; align-items: center; gap: 8px; }
+.qNum {
+  flex: 0 0 auto; font-size: 11px; font-weight: 700; color: #7aa2ff;
+  background: rgba(91, 140, 255, 0.16); border: 1px solid rgba(91, 140, 255, 0.45);
+  padding: 3px 8px; border-radius: 999px; margin-right: 6px;
+}
+.input {
+  flex: 1 1 auto; min-width: 0; padding: 10px 12px;
+  background: #0e0f14; border: 1px solid #363a47; border-radius: 8px;
+  color: #edeff4; font-size: 13.5px; font-family: inherit;
+}
+.textarea {
+  width: 100%; padding: 10px 12px; margin-top: 6px;
+  background: #0e0f14; border: 1px solid #363a47; border-radius: 8px;
+  color: #edeff4; font-size: 13.5px; font-family: inherit; resize: vertical;
+}
+.input:focus-visible, .textarea:focus-visible { outline: none; border-color: #5b8cff; box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.16); }
+.removeBtn {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
+  background: transparent; border: 1px solid #363a47; color: #b6bac4; font-size: 16px; line-height: 1;
+}
+.removeBtn:hover { background: rgba(236, 95, 95, 0.16); border-color: rgba(236, 95, 95, 0.5); color: #ffbcbc; }
+.addBtn {
+  align-self: flex-start; font-size: 12.5px; font-weight: 600; padding: 8px 14px; border-radius: 999px;
+  background: transparent; border: 1px dashed #363a47; color: #b6bac4; cursor: pointer;
+}
+.addBtn:hover { border-color: #5b8cff; color: #edeff4; }
+
+.aBlock { display: flex; flex-direction: column; }
+.aQ { font-size: 13.5px; font-weight: 600; color: #edeff4; display: flex; align-items: center; }
+.empty { font-size: 13px; color: #838895; margin: 0; }
+
+.actions { display: flex; gap: 10px; }
+.ghostBtn {
+  flex: 0 0 auto; padding: 12px 18px; border-radius: 12px;
+  background: transparent; border: 1px solid #363a47; color: #b6bac4; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.ghostBtn:hover { background: rgba(255, 255, 255, 0.05); }
+.primaryBtn {
+  flex: 1 1 auto; padding: 12px; border: none; border-radius: 12px;
+  background: linear-gradient(180deg, #7aa2ff, #5b8cff); color: #fff;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 8px 22px rgba(91, 140, 255, 0.35);
+}
+.primaryBtn:disabled { background: #262a39; color: #6b6f7a; cursor: not-allowed; box-shadow: none; }
+.skipBtn {
+  display: block; margin: 12px auto 0; background: none; border: none;
+  color: #838895; font-size: 12px; cursor: pointer; text-decoration: underline;
+}
+
+/* ===== 面接中の「事前質問と回答」パネル ===== */
+.panel {
+  max-width: 1180px; margin: 6px auto 18px;
+  background: linear-gradient(180deg, #1f2230, #191b22);
+  border: 1px solid #2a2d38; border-radius: 16px; overflow: hidden;
+}
+.panelHead {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px; background: transparent; border: none; cursor: pointer;
+  color: #edeff4; font-size: 13px; font-weight: 700;
+}
+.caret { font-size: 10px; color: #838895; }
+.panelBody { padding: 0 18px 16px; display: flex; flex-direction: column; gap: 14px; }
+.paRow { border-top: 1px solid #2a2d38; padding-top: 12px; }
+.paQ { font-size: 13.5px; font-weight: 600; color: #ffce8a; display: flex; align-items: center; margin-bottom: 8px; }
+.paA { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; background: #0e0f14; border: 1px solid #2a2d38; border-radius: 9px; margin-bottom: 6px; }
+.paName { font-size: 11px; font-weight: 600; color: #7aa2ff; }
+.paText { font-size: 13.5px; color: #edeff4; line-height: 1.55; white-space: pre-wrap; }
+.paWait { font-size: 12.5px; color: #838895; }
+
+/* ===== ブラッシュアップ: 本体とデザイン統一（トークン/ガラス/フォント） ===== */
+.wrap {
+  background:
+    radial-gradient(820px 480px at 50% -8%, rgba(91, 140, 255, 0.18), transparent 60%),
+    radial-gradient(520px 400px at 12% 112%, rgba(138, 108, 255, 0.11), transparent 60%),
+    linear-gradient(180deg, var(--bg-grad-1), var(--bg-grad-2));
+  font-family: var(--font);
+}
+.card {
+  background:
+    radial-gradient(420px 220px at 82% -12%, rgba(181, 124, 255, 0.14), transparent 65%),
+    linear-gradient(180deg, var(--glass), var(--glass-2));
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  border-color: var(--glass-line); box-shadow: var(--sh-2);
+  animation: riseIn 0.42s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+@keyframes riseIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.card::before { height: 4px; background: linear-gradient(90deg, var(--accent-cyan), var(--accent), var(--accent-3)); }
+.title { font-family: var(--font-display); letter-spacing: 0.2px; font-weight: 800; }
+.primaryBtn { background: var(--grad-accent); box-shadow: 0 10px 26px rgba(120, 108, 255, 0.40); transition: transform var(--ease), box-shadow var(--ease); }
+.primaryBtn:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 14px 32px rgba(120, 108, 255, 0.5); }
+.primaryBtn:not(:disabled):active { transform: translateY(0); }
+.panel {
+  background: linear-gradient(180deg, var(--glass), var(--glass-2));
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  border-color: var(--glass-line);
+}
+@media (prefers-reduced-motion: reduce) { .card { animation: none; } }

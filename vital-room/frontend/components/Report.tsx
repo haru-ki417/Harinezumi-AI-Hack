@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { BarChart } from './BarChart';
 import { formatReportElapsed, numericalReportComment, type MetricStats, type ReportSummary } from '@/lib/reportAnalysis';
+import type { InterviewComment } from '@/lib/interviewComment';
 import styles from './Report.module.css';
 
 const ROLE_LABEL: Record<string, string> = { interviewer: '面接官', candidate: '就活生' };
@@ -71,9 +72,9 @@ function MetricCells({ stats, startedAt }: { stats: MetricStats; startedAt: numb
   </>;
 }
 
-interface Props { summary: ReportSummary; completed?: boolean; onClose: () => void }
+interface Props { summary: ReportSummary; completed?: boolean; onClose: () => void; interviewComment?: InterviewComment | null }
 
-export function Report({ summary, completed = true, onClose }: Props) {
+export function Report({ summary, completed = true, onClose, interviewComment = null }: Props) {
   const modalRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
@@ -148,6 +149,19 @@ export function Report({ summary, completed = true, onClose }: Props) {
           <p className={styles.comment}>{comment}</p>
           {completed && (failed || analysis?.reason === 'provider_error') && <button type="button" className={styles.retry} onClick={retry}>AIコメントを再取得</button>}
         </section>
+
+        {interviewComment && interviewComment.lines.length > 0 && (
+          <section className={styles.analysis} aria-label="面接内容に関するコメント">
+            <div className={styles.analysisHead}>
+              <h3 className={styles.h3}>{interviewComment.heading}</h3>
+              <span className={styles.badge}>面接内容の集計</span>
+            </div>
+            <ul className={styles.interviewList}>
+              {interviewComment.lines.map((line, index) => <li key={index}>{line}</li>)}
+            </ul>
+            {interviewComment.note && <p className={styles.subNote}>{interviewComment.note}</p>}
+          </section>
+        )}
 
         {summary.participants.length > 1 && <label className={styles.selector}>
           表示する参加者

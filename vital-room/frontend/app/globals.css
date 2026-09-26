@@ -4,8 +4,71 @@
   box-sizing: border-box;
 }
 
+/* =====================================================================
+   共通デザイントークン（アプリ全体で継承。CSS Modules からも var() で参照可）
+   ===================================================================== */
+:root {
+  /* 面 */
+  --bg:          #0d0e13;
+  --bg-grad-1:   #14161d;
+  --bg-grad-2:   #0b0c11;
+  --surface:     #191b22;
+  --surface-2:   #1f2230;
+  --surface-3:   #262a39;
+  --line:        #2a2d38;
+  --line-2:      #363a47;
+  /* ガラス質感 */
+  --glass:       rgba(31, 34, 48, 0.72);
+  --glass-2:     rgba(22, 24, 31, 0.66);
+  --glass-line:  rgba(255, 255, 255, 0.08);
+  --blur:        blur(18px) saturate(150%);
+  /* 文字 */
+  --text:        #eef0f6;
+  --text-dim:    #b6bac4;
+  --text-mute:   #838895;
+  /* アクセント */
+  --accent:      #5b8cff;
+  --accent-2:    #7aa2ff;
+  --accent-3:    #b57cff;
+  --accent-cyan: #5fd8e6;
+  --accent-soft: rgba(91, 140, 255, 0.16);
+  --accent-line: rgba(91, 140, 255, 0.45);
+  /* 状態 */
+  --ok:          #34d07f;
+  --warn:        #e7c15c;
+  --danger:      #ec5f5f;
+  --heart:       #ff5c7a;
+  --topic:       #ffce8a;
+  /* 形・影 */
+  --r-s: 8px; --r-m: 12px; --r-l: 16px; --r-xl: 22px;
+  --sh-1: 0 4px 18px rgba(0, 0, 0, 0.30);
+  --sh-2: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --sh-card:       0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 8px 24px rgba(0, 0, 0, 0.34);
+  --sh-card-hover: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 20px 46px rgba(0, 0, 0, 0.48);
+  --ring: 0 0 0 3px var(--accent-soft);
+  --ease: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  --spring: 0.42s cubic-bezier(0.2, 0.8, 0.3, 1);
+  /* グラデーション */
+  --grad-accent: linear-gradient(135deg, #7aa2ff, #8a6cff 60%, #b57cff);
+  --grad-text:   linear-gradient(180deg, #ffffff, #c6d2ff);
+  /* フォント */
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+  --font-display: 'Sora', 'Inter', system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
 }
+
+body {
+  background: var(--bg-grad-2);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 共通スクロールバー */
+* { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
