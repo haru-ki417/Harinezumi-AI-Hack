@@ -1,0 +1,36 @@
+.content { max-width: 1160px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 80px; align-items: center; padding: 34px 0 48px; }
+.intro { min-width: 0; }
+.eyebrow { display: flex; align-items: center; gap: 10px; font-size: 10px; font-weight: 600; letter-spacing: .2em; color: var(--accent); margin: 0 0 22px; }
+.eyebrow::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); }
+.headline { font-size: clamp(36px, 4.8vw, 60px); line-height: 1.5; font-weight: 650; letter-spacing: -.06em; margin: 0 0 24px; }
+.headline span { color: var(--accent); }
+.copy { font-size: 14px; color: var(--text-dim); line-height: 2; max-width: 410px; }
+.portal { margin: 0; padding: 32px; background: linear-gradient(150deg, #1c2b23, #121d18); border-color: #384c3e; box-shadow: 0 30px 75px #0003; }
+.portalHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; color: var(--text-mute); font-size: 10px; letter-spacing: .15em; }
+.portalHeader span:last-child { border: 1px solid var(--line-2); border-radius: 50%; width: 30px; height: 30px; display: grid; place-items: center; color: var(--accent); font-size: 16px; }
+.portal h2 { font-size: 26px; letter-spacing: -.035em; line-height: 1.5; margin: 0 0 8px; }
+.portal > p { font-size: 12px; color: var(--text-mute); margin: 0 0 24px; }
+.portal [role="group"] button svg { vertical-align: middle; margin-right: 8px; }
+.portal [class*="panel"] h2 { font-size: 19px; }
+.portal [class*="description"] { font-size: 13px; margin-bottom: 24px; }
+.path { display: flex; gap: 12px; align-items: center; font-size: 11px; color: var(--text-mute); padding-top: 22px; margin-top: 24px; border-top: 1px solid var(--line); }
+.path span { display: flex; align-items: center; gap: 6px; }
+.path b { color: var(--accent); font-size: 10px; font-weight: 500; }
+.path i { flex: 1; height: 1px; background: var(--line-2); }
+.visual { margin-top: 40px; max-width: 430px; border: 1px solid var(--line); border-radius: 16px; padding: 20px 24px 16px; background: #12201866; }
+.visualTop, .visualBottom { display: flex; justify-content: space-between; gap: 12px; font-size: 9px; letter-spacing: .14em; color: var(--text-mute); }
+.visualTop span:first-child { color: var(--accent); }
+.conversation { display: flex; align-items: center; justify-content: space-between; gap: 18px; height: 88px; }
+.avatar { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0; color: #b8d7c4; background: #233e30; border: 1px solid #3d5e49; }
+.avatar:last-child { background: #34382c; color: #d7d3a7; border-color: #555944; }
+.wave { display: flex; height: 38px; gap: 4px; align-items: center; justify-content: center; flex: 1; overflow: hidden; }
+.wave i { width: 3px; flex-shrink: 0; background: var(--accent); border-radius: 8px; opacity: .6; }
+.features { border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(3, 1fr); padding: 30px 0; gap: 28px; }
+.feature { display: grid; grid-template-columns: 34px 1fr; column-gap: 14px; }
+.feature svg { color: var(--accent); grid-row: span 2; margin-top: 3px; }
+.feature strong { font-size: 13px; font-weight: 600; }
+.feature p { color: var(--text-mute); font-size: 11px; line-height: 1.8; margin: 5px 0 0; }
+.footer { margin: 0; padding: 14px 0 0; display: flex; justify-content: space-between; gap: 16px; align-items: center; color: var(--text-mute); font-size: 10px; }
+@media (max-width: 1000px) { .layout { gap: 36px; } .portal { padding: 26px; } .headline { font-size: 44px; } }
+@media (max-width: 760px) { .layout { grid-template-columns: 1fr; gap: 30px; padding: 8px 0 32px; } .headline { font-size: clamp(34px, 8vw, 48px); line-height: 1.45; } .visual { display: none; } .copy { max-width: none; margin-bottom: 0; } .portal { padding: 25px; } .eyebrow { margin-bottom: 15px; } .features { grid-template-columns: 1fr; gap: 22px; padding: 26px 0; } .feature { grid-template-columns: 24px 1fr; } .feature p { margin-top: 2px; } .footer { align-items: flex-start; } }

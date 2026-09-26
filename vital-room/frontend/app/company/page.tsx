@@ -142,12 +142,19 @@ export default function CompanyPage() {
     <header className={styles.header}><Link href="/" className={styles.brand}>VITAL ROOM / 採用面接</Link><div className={styles.row}>{company && <><span className={styles.muted}>{company.name}</span><button className={styles.button} disabled={busy} onClick={() => void run(async () => { await hiringApi('/auth/logout', token, {}); clearAccount(); })}>ログアウト</button></>}<Link href="/interviews/join" className={styles.button}>応募者の参加画面</Link></div></header>
     <p className={styles.eyebrow}>COMPANY WORKSPACE</p><h1 className={styles.title}>面接から、次の対話へ。</h1><p className={styles.subtitle}>対人・AIの面接を設定し、応募者ごとに招待。回答の根拠を確認して、担当者が判断します。</p>
     {error && <div role="alert" className={styles.error}>{error}</div>}{notice && <div role="status" className={styles.notice}>{notice}</div>}
-    {!ready ? <p className={styles.empty}>読み込み中…</p> : !company ? <section className={`${styles.card} ${styles.narrow}`}>
+    {!ready ? <p className={styles.empty}>読み込み中…</p> : !company ? <section className={`${styles.card} ${styles.authCard}`}>
+      <p className={styles.eyebrow}>YOUR WORKSPACE</p><h2>対話の準備を、ここから。</h2>
       <p className={styles.muted}>選択中の面接方式：{modeLabel(mode)}。ログイン後に面接内容を設定できます。</p>
-      <div className={styles.tabs}><button className={!register ? styles.primary : styles.button} onClick={() => setRegister(false)}>ログイン</button><button className={register ? styles.primary : styles.button} onClick={() => setRegister(true)}>企業アカウントを作成</button></div>
+      <div className={styles.tabs}><button aria-pressed={!register} className={!register ? styles.primary : styles.button} onClick={() => setRegister(false)}>ログイン</button><button aria-pressed={register} className={register ? styles.primary : styles.button} onClick={() => setRegister(true)}>企業アカウントを作成</button></div>
       <form className={styles.form} onSubmit={authenticate}>{register && <label className={styles.field}>企業名<input name="company_name" className={styles.input} required maxLength={120} autoComplete="organization" /></label>}<label className={styles.field}>メールアドレス<input name="email" className={styles.input} type="email" required autoComplete="username" /></label><label className={styles.field}>パスワード<input name="password" className={styles.input} type="password" minLength={register ? 10 : undefined} maxLength={128} required autoComplete={register ? 'new-password' : 'current-password'} /></label>{register && <p className={styles.muted}>パスワードは10文字以上で設定してください。</p>}<button className={styles.primary} disabled={busy}>{busy ? '処理中…' : register ? 'アカウントを作成' : 'ログイン'}</button></form>
     </section> : <>
-      <div className={styles.grid}>
+      <dl className={styles.overview} aria-label="面接の実施状況">
+        <div><dt>保存した面接設定</dt><dd>{templates.length}<small>件</small></dd></div>
+        <div><dt>招待・待機中</dt><dd>{invitations.filter(i => ['invited', 'waiting'].includes(i.status)).length}<small>人</small></dd></div>
+        <div><dt>面接中</dt><dd>{invitations.filter(i => i.status === 'in_progress').length}<small>人</small></dd></div>
+        <div><dt>面接完了</dt><dd>{invitations.filter(i => i.status === 'completed').length}<small>人</small></dd></div>
+      </dl>
+      <div className={styles.workspaceGrid}>
         <section className={styles.card}><h2>1. 面接を設定する</h2><form onSubmit={createTemplate} className={styles.form}>
           <fieldset className={styles.modeFieldset} role="radiogroup" aria-label="面接方式" aria-describedby="interview-mode-help" disabled={busy}>
             <legend>面接方式</legend>

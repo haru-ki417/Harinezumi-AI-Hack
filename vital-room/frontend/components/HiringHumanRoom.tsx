@@ -157,24 +157,29 @@ export function HiringHumanRoom({ id, token, host, session, onSession }: { id: s
   }, [id, token, host, retry, device.stream, storageKey, receiveVitals, resetVitals, receiveTranscription]);
 
   const send = (event: FormEvent) => { event.preventDefault(); speech.stop(); if (!socketReady || session.invitation.status !== 'in_progress') return; const message = pending || { text: draft.trim(), request_id: newRequestId() }; if (!message.text) return; setError(''); setSaved(''); setPending(message); pendingRef.current = message; sessionStorage.setItem(storageKey, JSON.stringify(message)); socket.current?.send(JSON.stringify({ type: 'transcript', ...message })); };
-  return <section className={styles.card}>
-    <div className={styles.row}><span className={styles.badge}>{connection}</span><span className={styles.muted}>{peers.map(p => `${p.role === 'interviewer' ? '担当者' : '応募者'}：${p.name}`).join(' ／ ')}</span>
+  const remoteParticipant = peers.find(p => p.role === (host ? 'candidate' : 'interviewer'));
+  const remoteHasVideo = Boolean(remote?.getVideoTracks().some(track => track.readyState === 'live'));
+  return <section className={`${styles.card} ${roomStyles.room}`}>
+    <div className={roomStyles.toolbar}>
+      <div className={roomStyles.connectionInfo}><span className={`${roomStyles.connection} ${socketReady ? roomStyles.connected : ''}`}><i aria-hidden="true" />{connection}</span><span className={roomStyles.participants}>{peers.map(p => `${p.role === 'interviewer' ? '担当者' : '応募者'}：${p.name}`).join(' ／ ')}</span></div>
+      <div className={roomStyles.actions}>
       {/* 文字起こしの開始/停止を最上部(残り時間の直下)に配置してすぐ押せるように */}
-      <button type="button" className={transcription.enabled ? styles.primary : styles.button} style={{ marginLeft: 'auto' }}
+      <button type="button" className={transcription.enabled ? styles.primary : styles.button}
         disabled={!transcription.supported || !device.microphone || !socketReady || session.invitation.status !== 'in_progress' || transcription.preparing}
         onClick={() => { speech.stop(); void transcription.toggle(); }}>
-        {transcription.enabled ? '● 文字起こしを停止' : '文字起こしを開始'}
+        {transcription.enabled && <span aria-hidden="true">●</span>}{transcription.enabled ? '文字起こしを停止' : '文字起こしを開始'}
       </button>
       {/* 画面共有(資料・PC画面を相手に表示)。WebRTC通話とは独立。 */}
       <button type="button" className={screenShare.sharing ? styles.primary : styles.button}
         disabled={session.invitation.status !== 'in_progress'}
         onClick={() => { if (screenShare.sharing) screenShare.stop(); else void screenShare.start(); }}>
-        {screenShare.sharing ? '● 画面共有を停止' : '画面を共有'}
+        {screenShare.sharing && <span aria-hidden="true">●</span>}{screenShare.sharing ? '画面共有を停止' : '画面を共有'}
       </button>
+      </div>
     </div>
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {(screenShare.sharing || presenter) && (
-      <section style={{ margin: '12px 0', border: '1px solid var(--accent-line, rgba(91,140,255,0.45))', borderRadius: 12, overflow: 'hidden' }}>
+      <section className={roomStyles.screenShare}>
         <div className={styles.row} style={{ padding: '8px 12px' }}>
           <span className={styles.badge}>{screenShare.sharing ? 'あなたが画面を共有中' : `${presenter === 'interviewer' ? '担当者' : '応募者'} が画面を共有中`}</span>
           {screenShare.sharing && <button type="button" className={styles.button} style={{ marginLeft: 'auto' }} onClick={() => screenShare.stop()}>共有を停止</button>}
@@ -184,9 +189,22 @@ export function HiringHumanRoom({ id, token, host, session, onSession }: { id: s
     )}
     <div className={roomStyles.liveLayout}>
       <div className={roomStyles.call}>
-        <StreamVideo stream={remote} muted={false} /><div className={roomStyles.preview}><StreamVideo stream={device.stream} small /></div>
-        <details className={roomStyles.deviceSettings}><summary>カメラ・マイク設定</summary><div className={roomStyles.deviceFields}><HiringDeviceControls device={device} preview={false} /></div></details>
-        <div className={`${styles.row} ${roomStyles.reconnect}`}><button className={styles.button} onClick={() => { setError(''); setRetry(n => n + 1); }}>接続をやり直す</button></div>
+        <div className={roomStyles.stage}>
+          <div className={roomStyles.stageHeading}><span className={roomStyles.stageLabel}>INTERVIEW ROOM</span><span className={roomStyles.stageStatus}>{connection === '通話接続済み' ? '通話中' : '接続待機中'}</span></div>
+          <div className={roomStyles.remoteFrame}>
+            {remote && <StreamVideo stream={remote} muted={false} />}
+            {!remoteHasVideo && <div className={`${roomStyles.placeholder} ${remote ? roomStyles.audioPlaceholder : ''}`}><span className={roomStyles.avatar} aria-hidden="true">{remoteParticipant?.name.slice(0, 1) || (host ? '応' : '面')}</span><strong>{remote ? '相手のカメラはオフです' : '相手の接続を待っています'}</strong><p>{remote ? '音声やチャットで会話を続けられます' : '接続すると、ここに相手の映像が表示されます'}</p></div>}
+            <span className={roomStyles.videoCaption}>{remoteParticipant?.name || (host ? '応募者' : '面接官')}<small>{host ? '応募者' : '面接官'}</small></span>
+          </div>
+          <div className={roomStyles.previewRow}>
+            <div className={roomStyles.preview}><StreamVideo stream={device.stream} small />{(!device.camera || !device.stream?.getVideoTracks().length) && <span className={roomStyles.selfPlaceholder}>カメラ OFF</span>}<span className={roomStyles.selfCaption}>あなた</span></div>
+            <div className={roomStyles.deviceState}><span><i className={device.camera ? roomStyles.deviceOn : ''} aria-hidden="true" />カメラ {device.camera ? 'ON' : 'OFF'}</span><span><i className={device.microphone ? roomStyles.deviceOn : ''} aria-hidden="true" />マイク {device.microphone ? 'ON' : 'OFF'}</span></div>
+          </div>
+        </div>
+        <div className={roomStyles.callControls}>
+          <details className={roomStyles.deviceSettings}><summary>カメラ・マイク設定</summary><div className={roomStyles.deviceFields}><HiringDeviceControls device={device} preview={false} /></div></details>
+          <div className={roomStyles.reconnect}><button className={styles.button} onClick={() => { setError(''); setRetry(n => n + 1); }}>接続をやり直す</button></div>
+        </div>
       </div>
       <HiringVitals vital={vital} host={host} active={session.invitation.status === 'in_progress'} connected={socketReady} />
     </div>

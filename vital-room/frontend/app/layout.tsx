@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'バイタル共有ルーム',
-  description: '同意にもとづく非接触バイタル(心拍・HRV・ストレス)の透明な共有',
+  title: 'VITAL ROOM | 対話に、集中できる面接を。',
+  description: '招待から対人・AI面接、面接後の振り返りまで。対話に集中するための面接ワークスペース。',
 };
 
 export default function RootLayout({

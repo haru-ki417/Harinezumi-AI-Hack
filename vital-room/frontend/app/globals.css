@@ -9,30 +9,31 @@
    ===================================================================== */
 :root {
   /* 面 */
-  --bg:          #0d0e13;
-  --bg-grad-1:   #14161d;
-  --bg-grad-2:   #0b0c11;
-  --surface:     #191b22;
-  --surface-2:   #1f2230;
-  --surface-3:   #262a39;
-  --line:        #2a2d38;
-  --line-2:      #363a47;
+  color-scheme: dark;
+  --bg:          #0b1110;
+  --bg-grad-1:   #16251e;
+  --bg-grad-2:   #0a100e;
+  --surface:     #141e1b;
+  --surface-2:   #1a2722;
+  --surface-3:   #24362d;
+  --line:        #293a32;
+  --line-2:      #3b5045;
   /* ガラス質感 */
-  --glass:       rgba(31, 34, 48, 0.72);
-  --glass-2:     rgba(22, 24, 31, 0.66);
+  --glass:       rgba(26, 39, 34, 0.9);
+  --glass-2:     rgba(20, 30, 27, 0.9);
   --glass-line:  rgba(255, 255, 255, 0.08);
   --blur:        blur(18px) saturate(150%);
   /* 文字 */
-  --text:        #eef0f6;
-  --text-dim:    #b6bac4;
-  --text-mute:   #838895;
+  --text:        #f0f4ec;
+  --text-dim:    #bfcbc2;
+  --text-mute:   #97aa9f;
   /* アクセント */
-  --accent:      #5b8cff;
-  --accent-2:    #7aa2ff;
-  --accent-3:    #b57cff;
-  --accent-cyan: #5fd8e6;
-  --accent-soft: rgba(91, 140, 255, 0.16);
-  --accent-line: rgba(91, 140, 255, 0.45);
+  --accent:      #94e4bb;
+  --accent-2:    #b7f3d0;
+  --accent-3:    #d7c99d;
+  --accent-cyan: #94e4bb;
+  --accent-soft: rgba(148, 228, 187, 0.09);
+  --accent-line: rgba(148, 228, 187, 0.38);
   /* 状態 */
   --ok:          #34d07f;
   --warn:        #e7c15c;
@@ -49,8 +50,8 @@
   --ease: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   --spring: 0.42s cubic-bezier(0.2, 0.8, 0.3, 1);
   /* グラデーション */
-  --grad-accent: linear-gradient(135deg, #7aa2ff, #8a6cff 60%, #b57cff);
-  --grad-text:   linear-gradient(180deg, #ffffff, #c6d2ff);
+  --grad-accent: linear-gradient(135deg, #b7f3d0, #94e4bb 60%, #78c5aa);
+  --grad-text:   linear-gradient(180deg, #f0f4ec, #b7d1be);
   /* フォント */
   --font: 'Inter', system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
   --font-display: 'Sora', 'Inter', system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
@@ -68,6 +69,16 @@ body {
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  line-height: 1.6;
+}
+
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea, summary { -webkit-tap-highlight-color: transparent; }
+button, a, summary { touch-action: manipulation; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+::selection { background: #94e4bb; color: #102219; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 
 /* 共通スクロールバー */

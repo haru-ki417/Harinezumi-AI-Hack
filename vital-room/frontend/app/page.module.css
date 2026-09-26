@@ -550,7 +550,7 @@
 .lobbyWrap, .roomWrap, .toolbar {
   --sh-card:       0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.34);
   --sh-card-hover: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 18px 42px rgba(0, 0, 0, 0.46);
-  --grad-accent:   linear-gradient(135deg, #7aa2ff, #8a6cff 62%, #b57cff);
+  --grad-accent:   linear-gradient(135deg, #b7f3d0, #94e4bb 60%, #78c5aa);
 }
 
 /* --- 背景を多層グラデーションでリッチに --- */
@@ -594,7 +594,7 @@
   -webkit-background-clip: text; background-clip: text;
   color: transparent; -webkit-text-fill-color: transparent;
 }
-.brandMark { background: var(--grad-accent); box-shadow: 0 4px 16px rgba(120, 108, 255, 0.45); }
+.brandMark { background: var(--grad-accent); color: #10251b; box-shadow: 0 4px 16px #94e4bb20; }
 
 /* --- BPM 数字にわずかなグラデーション（異常時は赤を優先） --- */
 .bpmNum {
@@ -694,7 +694,7 @@
 }
 
 /* アクセントの効いたボタン・選択状態 */
-.joinBtn { background: var(--grad-accent); box-shadow: 0 10px 26px rgba(120, 108, 255, 0.40); }
+.joinBtn { background: var(--grad-accent); color: #10251b; box-shadow: 0 10px 26px #94e4bb18; }
 .joinBtn:not(:disabled):hover { box-shadow: 0 14px 34px rgba(120, 108, 255, 0.52); }
 .roleOn { background: linear-gradient(180deg, rgba(122, 162, 255, 0.30), rgba(91, 140, 255, 0.15)); }
 .feat { background: rgba(91, 140, 255, 0.12); border-color: rgba(122, 162, 255, 0.40); }

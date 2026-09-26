@@ -1,9 +1,51 @@
-.liveLayout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 26px; align-items: start; margin-top: 22px; }
+.room { overflow: hidden; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.connectionInfo { min-width: 0; display: grid; gap: 7px; }
+.connection { display: inline-flex; align-items: center; gap: 8px; width: fit-content; font-size: 12px; font-weight: 650; color: var(--text-dim); }
+.connection i, .deviceState i { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: #718078; }
+.connected { color: #a7e7c4; }
+.connected i { background: #94e4bb; box-shadow: 0 0 0 4px #94e4bb0d; }
+.participants { max-width: 100%; font-size: 11px; line-height: 1.6; color: var(--text-mute); overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions button { font-size: 12px; min-height: 40px; padding: 9px 13px; }
+.screenShare { margin: 20px 0; border: 1px solid #94e4bb45; background: #0b1110; border-radius: 16px; overflow: hidden; }
+.liveLayout { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); gap: 28px; align-items: start; margin-top: 26px; }
 .call { min-width: 0; }
-.preview { margin-top: 12px; }
-.deviceSettings { margin-top: 18px; }
-.deviceFields { margin-top: 16px; }
-.reconnect { margin-top: 18px; }
-.answer { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
+.stage { border: 1px solid #9db3a51c; background: #0b1110; border-radius: 17px; overflow: hidden; }
+.stageHeading { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 15px 17px; }
+.stageLabel { font-size: 10px; letter-spacing: .15em; font-weight: 700; color: #a0b2a8; }
+.stageStatus { font-size: 10px; color: #81978c; }
+.remoteFrame { position: relative; width: 100%; aspect-ratio: 16/10; background: radial-gradient(ellipse at 50% 30%, #1d2e26, #101913 70%); overflow: hidden; }
+.remoteFrame > video { display: block; width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain; border-radius: 0; background: #080d0a; }
+.placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px 22px 56px; pointer-events: none; }
+.audioPlaceholder { bottom: 44px; padding-bottom: 20px; background: radial-gradient(ellipse at 50% 30%, #1d2e26, #101913 70%); }
+.avatar { display: grid; place-items: center; width: 70px; height: 70px; margin-bottom: 18px; border-radius: 50%; background: #94e4bb10; border: 1px solid #94e4bb26; color: #a7d9ba; font-size: 24px; font-weight: 500; box-shadow: 0 0 0 10px #94e4bb04, 0 0 0 24px #94e4bb03; }
+.placeholder strong { font-size: 14px; font-weight: 600; color: #d7e3d8; }
+.placeholder p { max-width: 280px; margin: 9px 0 0; font-size: 11px; line-height: 1.8; color: #8b9f93; }
+.videoCaption { position: absolute; left: 14px; bottom: 14px; display: flex; gap: 9px; align-items: center; max-width: calc(100% - 28px); padding: 7px 10px; border: 1px solid #edf6ec1a; border-radius: 7px; background: #0b1110d9; color: #ecf2e9; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; pointer-events: none; }
+.remoteFrame:has(video) .videoCaption { bottom: 50px; }
+.videoCaption small { color: #96ab9c; font-size: 10px; white-space: nowrap; }
+.previewRow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; }
+.preview { position: relative; width: 42%; max-width: 176px; overflow: hidden; border: 1px solid #99b8a42b; border-radius: 9px; background: #101a14; }
+.preview > video { display: block; width: 100%; max-width: none; border: none; border-radius: 0; aspect-ratio: 16/9; object-fit: contain; background: #101a14; }
+.selfCaption { position: absolute; bottom: 7px; left: 7px; padding: 3px 6px; border-radius: 4px; background: #0b1110b8; font-size: 10px; color: #e0eadf; }
+.selfPlaceholder { position: absolute; inset: 0; display: grid; place-items: center; font-size: 9px; color: #829889; letter-spacing: .04em; }
+.deviceState { display: grid; gap: 10px; margin-right: 5px; font-size: 10px; color: #9aad9f; }
+.deviceState span { display: flex; align-items: center; gap: 8px; }
+.deviceState .deviceOn { background: #94e4bb; }
+.callControls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-top: 14px; }
+.deviceSettings { flex: 1 1 210px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: #ffffff02; }
+.deviceSettings summary { padding: 13px; color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.deviceSettings summary:hover { color: var(--text); }
+.deviceSettings summary:focus-visible { outline: 2px solid #94e4bb; outline-offset: 3px; border-radius: 8px; }
+.deviceSettings[open] { flex-basis: 100%; }
+.deviceFields { padding: 4px 14px 16px; }
+.deviceFields label { font-size: 12px; }
+.reconnect button { min-height: 44px; font-size: 11px; padding: 11px 13px; }
+.answer { margin-top: 30px; padding-top: 25px; border-top: 1px solid var(--line); }
 .answer > h3:first-child { margin-top: 0; }
-@media (max-width: 900px) { .liveLayout { grid-template-columns: 1fr; } }
+.answer > p { max-width: 880px; }
+.answer > [data-testid='human-transcription-interim'] { padding: 15px 18px; border-left: 2px solid #94e4bb; border-radius: 0 8px 8px 0; background: #94e4bb08; line-height: 1.8; }
+@media (max-width: 1100px) { .liveLayout { grid-template-columns: minmax(0, 1fr); } .remoteFrame { aspect-ratio: 16/9; } }
+@media (max-width: 600px) { .toolbar { gap: 15px; padding-bottom: 18px; } .actions { width: 100%; } .actions button { flex: 1; padding-inline: 9px; } .liveLayout { margin-top: 18px; gap: 26px; } .stageHeading { padding: 12px; } .avatar { width: 50px; height: 50px; font-size: 20px; margin-bottom: 14px; } .placeholder { padding: 15px 12px 44px; } .placeholder strong { font-size: 12px; } .placeholder p { font-size: 10px; max-width: 210px; } .previewRow { padding: 12px; } .answer { margin-top: 25px; padding-top: 20px; } }
+@media (max-width: 390px) { .remoteFrame { aspect-ratio: 4/3; } .stageLabel { font-size: 9px; } .stageStatus { font-size: 9px; } }

@@ -86,7 +86,7 @@
   font-family: var(--font);
 }
 .title { font-family: var(--font-display); letter-spacing: 0.2px; }
-.primaryBtn { background: var(--grad-accent); box-shadow: 0 10px 26px rgba(120, 108, 255, 0.40); transition: transform var(--ease), box-shadow var(--ease); }
+.primaryBtn { background: var(--grad-accent); color: #10251b; box-shadow: 0 10px 26px #94e4bb18; transition: transform var(--ease), box-shadow var(--ease); }
 .primaryBtn:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 14px 32px rgba(120, 108, 255, 0.5); }
 .primaryBtn:not(:disabled):active { transform: translateY(0); }
 .close { transition: background var(--ease), color var(--ease), transform var(--ease); }
