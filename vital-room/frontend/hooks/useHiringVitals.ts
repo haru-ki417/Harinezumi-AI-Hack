@@ -95,14 +95,17 @@ export function useHiringVitals({ socket, stream, camera, active, socketReady, r
     const freshBpm = Number.isFinite(raw.current_bpm) && raw.current_bpm > 0 && raw.measurement_valid !== false;
     const freshStress = typeof raw.stress === 'number' && Number.isFinite(raw.stress)
       && raw.stress >= 0 && raw.stress <= 100 && raw.stress_valid !== false;
-    const reset = !(Number.isFinite(raw.current_bpm) && raw.current_bpm > 0); // 計測リセット
+    const displayBpm = typeof raw.display_bpm === 'number' && Number.isFinite(raw.display_bpm) && raw.display_bpm > 0 ? raw.display_bpm : null;
+    const displayStress = typeof raw.display_stress === 'number' && Number.isFinite(raw.display_stress) && raw.display_stress >= 0 && raw.display_stress <= 100 ? raw.display_stress : null;
     setRecords(current => {
       const prev = current[id]?.vitals;
-      const bpm = freshBpm ? (raw.current_bpm as number) : reset ? 0 : (prev?.current_bpm ?? 0);
-      const stress = freshStress ? raw.stress : reset ? undefined : prev?.stress;
-      const vitals: Vitals = { ...raw, current_bpm: bpm, stress, is_anomalous: Boolean(raw.is_anomalous) };
-      const history = freshStress
-        ? [...(current[id]?.history || []), raw.stress as number].slice(-MAX_HISTORY)
+      const bpm = displayBpm ?? (freshBpm ? raw.current_bpm : prev?.current_bpm ?? 0);
+      const stress = displayStress ?? (freshStress ? raw.stress : prev?.stress);
+      const vitals: Vitals = { ...raw, current_bpm: bpm, stress,
+        display_source: raw.display_source ?? prev?.display_source,
+        is_anomalous: Boolean(raw.is_anomalous) };
+      const history = freshStress || (raw.display_fresh === true && displayStress !== null)
+        ? [...(current[id]?.history || []), stress as number].slice(-MAX_HISTORY)
         : (current[id]?.history || []);
       return { ...current, [id]: { vitals, receivedAt: Date.now(), history } };
     });
@@ -144,9 +147,10 @@ export function useHiringVitals({ socket, stream, camera, active, socketReady, r
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
       try {
+        const capturedAt = performance.now() / 1000;
         context.drawImage(video, 0, 0, width, height);
         const frame = canvas.toDataURL('image/jpeg', 0.65);
-        if (frame.length <= 128_000) ws.send(JSON.stringify({ type: 'frame', image_base64: frame }));
+        if (frame.length <= 128_000) ws.send(JSON.stringify({ type: 'frame', image_base64: frame, captured_at: capturedAt }));
       } catch { if (!stopped) setError('計測用画像を送信できません。接続を確認してください。'); }
     }, 50);
     return () => { stopped = true; window.clearInterval(timer); video.pause(); video.srcObject = null; };
@@ -154,8 +158,13 @@ export function useHiringVitals({ socket, stream, camera, active, socketReady, r
 
   useEffect(() => {
     const timer = window.setInterval(() => setRecords(current => {
-      const fresh = Object.fromEntries(Object.entries(current).filter(([, record]) => Date.now() - record.receivedAt < STALE_AFTER_MS));
-      return Object.keys(fresh).length === Object.keys(current).length ? current : fresh;
+      let changed = false;
+      const next = Object.fromEntries(Object.entries(current).map(([id, record]) => {
+        if (Date.now() - record.receivedAt < STALE_AFTER_MS || record.vitals.display_fresh === false) return [id, record];
+        changed = true;
+        return [id, { ...record, vitals: { ...record.vitals, display_fresh: false } }];
+      }));
+      return changed ? next : current;
     }), 1000);
     return () => window.clearInterval(timer);
   }, []);

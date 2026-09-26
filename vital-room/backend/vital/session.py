@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import threading
+import uuid
+import weakref
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
 from typing import Deque, Dict, Tuple
@@ -20,7 +22,13 @@ import numpy as np
 
 from .config import Settings
 from .hrv import hrv_from_pulse, stress_score
-from .rppg import compute_pulse
+from .rppg import MIN_DURATION, compute_pulse
+from .face import _TRACKS, _track_lock
+
+
+def _release_roi(key: str) -> None:
+    with _track_lock:
+        _TRACKS.pop(key, None)
 
 
 @dataclass
@@ -35,8 +43,15 @@ class VitalState:
     eff_fps: float = 0.0
     measurement_valid: bool = False  # True only for a fresh accepted BPM estimate.
     stress_valid: bool = False       # Requires fresh HRV and both baselines.
+    measurement_status: str = 'warming_up'
+    signal_seconds: float = 0.0
+    display_bpm: float | None = None
+    display_stress: float | None = None
+    display_source: str = 'none'
+    display_fresh: bool = False
+    display_confidence: float | None = None
 
-    def as_dict(self) -> Dict[str, float | bool]:
+    def as_dict(self) -> dict:
         return asdict(self)
 
 
@@ -54,6 +69,14 @@ class ClientState:
         self.rmssd_history: Deque[Tuple[float, float]] = deque()
         self.last_compute = float('-inf')
         self.last_result = VitalState()
+        self.status = 'warming_up'
+        self.signal_seconds = 0.0
+        self.display_bpm: float | None = None
+        self.display_stress: float | None = None
+        self.display_source = 'none'
+        self.display_confidence: float | None = None
+        self.display_hr_base: float | None = None
+        self.display_rmssd_base: float | None = None
 
     def add(self, t: float, rgb: Tuple[float, float, float]) -> None:
         if not np.isfinite([t, *rgb]).all() or min(rgb) <= 0:
@@ -68,8 +91,11 @@ class ClientState:
                 # 実際にフレームが途切れた(ストリーム停止)場合のみリセット。
                 # 古いデータは陳腐化しているため破棄する。
                 self.buf.clear()
-                self.bpm_history.clear()
-                self.rmssd_history.clear()
+                # A short camera/network interruption invalidates the pulse
+                # window, but must not restart the entire stress calibration.
+                if t - previous[0] > 3.0:
+                    self.bpm_history.clear()
+                    self.rmssd_history.clear()
                 self.bpm = self.rmssd = self.sdnn = self.stress = 0
                 self.last_compute = float('-inf')
             else:
@@ -95,7 +121,9 @@ class ClientState:
 
     def compute(self, t: float) -> VitalState:
         s = self.s
+        self.signal_seconds = self.buf[-1][0] - self.buf[0][0] if len(self.buf) > 1 else 0.0
         if len(self.buf) < s.min_samples:
+            self.status = 'warming_up'
             return self._state(False)
         if t - self.last_compute < 0.4:
             return self.last_result
@@ -107,10 +135,28 @@ class ClientState:
 
         recent = times >= times[-1] - 8
         res = compute_pulse(times[recent], rgb[recent])
-        if (res is None or res.bpm <= 0 or res.confidence < s.conf_min
-                or res.snr_db < s.snr_min_db or eff_fps < s.min_fps_for_hr):
+        if (res is None or not np.isfinite(res.bpm) or res.bpm <= 0
+                or eff_fps < s.min_fps_for_hr):
+            self.status = ('warming_up' if dur < MIN_DURATION else
+                           'low_fps' if eff_fps < s.min_fps_for_hr else 'unstable_signal')
             self.last_compute = t
             self.last_result = self._state(False, eff_fps)
+            return self.last_result
+
+        # Display a computed estimate even when confidence is low. Keep it
+        # separate from quality-approved values used in saved measurements.
+        self.display_bpm = res.bpm if self.display_bpm is None else (
+            (1 - s.bpm_smooth) * self.display_bpm + s.bpm_smooth * res.bpm)
+        if self.display_hr_base is None:
+            self.display_hr_base = self.display_bpm
+        self.display_stress = float(100 * np.clip(
+            (self.display_bpm - self.display_hr_base) / (0.25 * self.display_hr_base), 0, 1))
+        self.display_source = 'heart_rate'
+        self.display_confidence = res.confidence
+        if res.confidence < s.conf_min or res.snr_db < s.snr_min_db:
+            self.status = 'unstable_signal'
+            self.last_compute = t
+            self.last_result = self._state(False, eff_fps, display_fresh=True)
             return self.last_result
 
         # BPM 平滑化
@@ -138,13 +184,23 @@ class ClientState:
             if not self.rmssd_history or t - self.rmssd_history[-1][0] >= 1:
                 self.rmssd_history.append((t, self.rmssd))
             _trim(self.rmssd_history, t - s.anom_history_sec)
+            if self.display_rmssd_base is None and self.rmssd > 0:
+                self.display_rmssd_base = self.rmssd
+            if self.display_rmssd_base is not None:
+                self.display_stress = stress_score(self.bpm, self.rmssd, self.display_hr_base, self.display_rmssd_base)
+                self.display_source = 'hrv'
 
         # ストレス & 異常判定
         bpm_base = self._baseline(self.bpm_history, t)
         rmssd_base = self._baseline(self.rmssd_history, t)
         stress_valid = hrv is not None and bpm_base > 0 and rmssd_base > 0
+        self.status = ('measuring' if stress_valid else 'low_fps' if eff_fps < 15
+                       else 'calibrating' if hrv is not None or dur < 12 else 'unstable_hrv')
         if stress_valid:
             self.stress = stress_score(self.bpm, self.rmssd, bpm_base, rmssd_base)
+            self.display_stress = self.stress
+            self.display_source = 'calibrated'
+        self.display_bpm = self.bpm
 
         anomalous = False
         if bpm_base > 0 and (self.bpm - bpm_base) >= s.anom_delta_bpm:
@@ -153,11 +209,11 @@ class ClientState:
             anomalous = True
 
         self.last_compute = t
-        self.last_result = self._state(anomalous, eff_fps, measurement_valid=True, stress_valid=stress_valid)
+        self.last_result = self._state(anomalous, eff_fps, measurement_valid=True, stress_valid=stress_valid, display_fresh=True)
         return self.last_result
 
     def _state(self, anomalous: bool, eff_fps: float = 0.0, *,
-               measurement_valid: bool = False, stress_valid: bool = False) -> VitalState:
+               measurement_valid: bool = False, stress_valid: bool = False, display_fresh: bool = False) -> VitalState:
         return VitalState(
             current_bpm=round(self.bpm, 1),
             is_anomalous=anomalous,
@@ -169,6 +225,13 @@ class ClientState:
             eff_fps=round(eff_fps, 1),
             measurement_valid=measurement_valid,
             stress_valid=stress_valid,
+            measurement_status=self.status,
+            signal_seconds=round(self.signal_seconds, 1),
+            display_bpm=round(self.display_bpm, 1) if self.display_bpm is not None else None,
+            display_stress=round(self.display_stress, 1) if self.display_stress is not None else None,
+            display_source=self.display_source,
+            display_fresh=display_fresh,
+            display_confidence=round(self.display_confidence, 3) if self.display_confidence is not None else None,
         )
 
 
@@ -180,6 +243,8 @@ def _trim(hist: Deque[Tuple[float, float]], cutoff: float) -> None:
 class SessionManager:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.roi_key = uuid.uuid4().hex
+        weakref.finalize(self, _release_roi, self.roi_key)
         self._clients: "defaultdict[str, ClientState]" = defaultdict(
             lambda: ClientState(settings)
         )
@@ -194,4 +259,7 @@ class SessionManager:
 
     def peek(self, client_id: str) -> VitalState:
         with self._lock:
-            return self._clients[client_id]._state(False)
+            state = self._clients[client_id]
+            result = state._state(False, state.last_result.eff_fps)
+            result.measurement_status = 'no_face'
+            return result

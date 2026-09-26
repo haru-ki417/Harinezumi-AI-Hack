@@ -74,17 +74,43 @@ class MeasurementValidityTests(unittest.TestCase):
         self.state.rmssd_history.clear()
         with patch("vital.session.compute_pulse", return_value=self.pulse), \
                 patch("vital.session.hrv_from_pulse", return_value=self.hrv), \
-                patch("vital.session.stress_score") as stress_score:
+                patch("vital.session.stress_score", return_value=23) as stress_score:
             result = self.state.compute(40)
-        stress_score.assert_not_called()
+        stress_score.assert_called_once()
         self.assertTrue(result.measurement_valid)
         self.assertFalse(result.stress_valid)
+        self.assertEqual(result.stress, 0)
+        self.assertEqual(result.display_stress, 23)
+        self.assertEqual(result.display_source, 'hrv')
+
+    def test_low_confidence_estimates_are_visible_without_becoming_saved_measurements(self):
+        pulse = SimpleNamespace(bpm=78, confidence=0.05, snr_db=-5)
+        with patch('vital.session.compute_pulse', return_value=pulse):
+            first = self.state.compute(40)
+            self.assertEqual(first.display_bpm, 78)
+            self.assertEqual(first.display_stress, 0)
+            self.assertEqual(first.display_confidence, 0.05)
+            self.assertEqual(first.display_source, 'heart_rate')
+            pulse.bpm = 90
+            next_value = self.state.compute(41)
+        self.assertGreater(next_value.display_bpm, first.display_bpm)
+        self.assertGreater(next_value.display_stress, first.display_stress)
+        self.assertTrue(next_value.display_fresh)
+        self.assertFalse(next_value.measurement_valid)
+        self.assertFalse(next_value.stress_valid)
+        with patch('vital.session.compute_pulse', return_value=None):
+            held = self.state.compute(42)
+        self.assertEqual(held.display_bpm, next_value.display_bpm)
+        self.assertEqual(held.display_stress, next_value.display_stress)
+        self.assertFalse(held.display_fresh)
 
     def test_warmup_and_low_frame_rate_are_invalid(self):
         self.assertFalse(VitalState().measurement_valid)
         warmup = ClientState(self.settings).compute(1)
         self.assertFalse(warmup.measurement_valid)
         self.assertFalse(warmup.stress_valid)
+        self.assertIsNone(warmup.display_bpm)
+        self.assertIsNone(warmup.display_stress)
         self.state.buf.clear()
         for index in range(8):
             self.state.add(index, (80, 90, 100))

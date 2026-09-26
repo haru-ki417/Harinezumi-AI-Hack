@@ -56,17 +56,17 @@ def _pos_overlap_add(rgb: np.ndarray, fs: float) -> np.ndarray:
     if n < wl:
         wl = n
     eps = 1e-9
-    # 投影行列 P = [[0,1,-1],[-2,1,1]]
-    for m in range(0, n - wl + 1):
-        c = rgb[m:m + wl]                           # (wl,3)
-        mean = c.mean(axis=0) + eps
-        cn = c / mean                               # 時間正規化
-        s1 = cn[:, 1] - cn[:, 2]                    # G - B
-        s2 = -2.0 * cn[:, 0] + cn[:, 1] + cn[:, 2]  # -2R + G + B
-        alpha = (s1.std() + eps) / (s2.std() + eps)
-        hh = s1 + alpha * s2
-        h[m:m + wl] += hh - hh.mean()               # overlap-add
-    return h
+    # Same POS windows and overlap-add, evaluated in NumPy rather than hundreds
+    # of Python iterations which used to stall camera ingestion during HRV.
+    c = np.lib.stride_tricks.sliding_window_view(rgb, wl, axis=0).transpose(0, 2, 1)
+    cn = c / (c.mean(axis=1, keepdims=True) + eps)
+    s1 = cn[:, :, 1] - cn[:, :, 2]
+    s2 = -2.0 * cn[:, :, 0] + cn[:, :, 1] + cn[:, :, 2]
+    alpha = (s1.std(axis=1) + eps) / (s2.std(axis=1) + eps)
+    hh = s1 + alpha[:, None] * s2
+    hh -= hh.mean(axis=1, keepdims=True)
+    indices = np.arange(hh.shape[0])[:, None] + np.arange(wl)
+    return np.bincount(indices.ravel(), weights=hh.ravel(), minlength=n)
 
 
 def _bandpass(x: np.ndarray, fs: float, fmin: float, fmax: float) -> np.ndarray:

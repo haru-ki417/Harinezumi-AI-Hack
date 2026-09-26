@@ -466,6 +466,17 @@ def access_session(invitation_id: str, token: str) -> tuple[str, dict]:
         return role, _snapshot(connection, _refresh(connection, row), private=role == "interviewer")
 
 
+def active_human_peer(invitation_id: str, token: str, expected_role: str) -> bool:
+    """Authorize each camera frame without rebuilding transcripts/reports or a write lock."""
+    with _db() as connection:
+        role, row = _authorize(connection, invitation_id, token)
+        now = _now()
+        return (role == expected_role and row['status'] == 'in_progress'
+                and _date(row['expires_at']) > now
+                and (not row['deadline_at'] or _date(row['deadline_at']) > now)
+                and _template(connection, row['template_id'])['mode'] == 'human')
+
+
 def save_human_measurement(invitation_id: str, token: str, values: dict) -> None:
     with _db(write=True) as connection:
         role, row = _authorize(connection, invitation_id, token)

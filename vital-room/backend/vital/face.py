@@ -62,7 +62,9 @@ def _detect_raw(gray: np.ndarray):
             scale = _DETECT_MAXW / float(w)
             det = cv2.resize(gray, (int(w * scale), int(h * scale)),
                              interpolation=cv2.INTER_AREA)
-        ms = max(40, int(80 * scale))
+        # Camera frames are usually only 320px wide; an 80px minimum misses
+        # ordinary seated faces. Scale the limit with the input resolution.
+        ms = max(24, int(min(h, w) * scale / 6))
         faces = _CASCADE.detectMultiScale(
             det, scaleFactor=1.2, minNeighbors=5, minSize=(ms, ms)
         )

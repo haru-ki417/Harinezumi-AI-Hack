@@ -52,16 +52,19 @@ class SignalQualityTests(unittest.TestCase):
         self.assertLess(result.rmssd, 2)
         self.assertIsNone(hrv_from_pulse(pulse[:160], 20))
 
-    def test_light_jump_and_frame_gap_reset_calibration(self):
+    def test_short_gap_preserves_baseline_but_long_pause_resets_it(self):
         state = ClientState(Settings())
         for t, rgb in zip(*synthetic()):
             state.add(t, tuple(rgb))
         state.bpm_history.append((1, 72))
         state.add(21, (120, 90, 70))
         self.assertEqual(len(state.buf), 1)
-        self.assertFalse(state.bpm_history)
+        self.assertTrue(state.bpm_history)
         state.add(21.05, (180, 160, 150))
         self.assertEqual(len(state.buf), 1)
+        state.add(25, (120, 90, 70))
+        self.assertEqual(len(state.buf), 1)
+        self.assertFalse(state.bpm_history)
 
     def test_turn_credentials_are_temporary_and_secret_is_not_exposed(self):
         with patch.dict(os.environ, {'HIRING_TURN_URLS': 'turn:relay.example:3478,turns:relay.example:5349', 'HIRING_TURN_SECRET': 'private-secret'}):

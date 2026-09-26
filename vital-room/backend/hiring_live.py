@@ -8,13 +8,16 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
+import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
-from hiring import access_session, append_human_turn, save_human_measurement
+from hiring import access_session, active_human_peer, append_human_turn, save_human_measurement
 from vital import SessionManager, decode_image, face_roi_rgb, load_settings
 from hiring_rtc import ice_servers
 
@@ -29,6 +32,8 @@ MAX_FRAME_SIDE = 640
 MAX_FRAME_PIXELS = 640 * 480
 MAX_FRAME_FPS = 25
 MAX_FRAME_WORKERS = 2
+MAX_PENDING_FRAMES = 8
+MAX_FRAME_AGE = 1.0
 FRAME_TIMEOUT = 3
 VITAL_BROADCAST_INTERVAL = 0.2
 # 確定計測が途切れてから表示に直近値を保持し続ける最大秒数(点滅防止)。
@@ -54,6 +59,10 @@ class Peer:
     last_frame: float = 0.0
     last_vital_broadcast: float = 0.0
     frame_task: asyncio.Task | None = None
+    pending_frames: deque = field(default_factory=deque)
+    capture_offset: float | None = None
+    last_capture: float | None = None
+    last_diagnostic: float = 0.0
     # 直近に「確定」した計測時刻。確定/非確定が細かく交互になっても、この時刻から
     # HOLD 秒間は直近値を保持して表示の点滅を防ぐ(本当に途切れたら空にする)。
     last_valid_measure: float = float("-inf")
@@ -79,6 +88,9 @@ def _reset_vitals(peer: Peer) -> bool:
     peer.vital_manager = None
     peer.last_frame = 0
     peer.last_vital_broadcast = 0
+    peer.pending_frames.clear()
+    peer.capture_offset = peer.last_capture = None
+    peer.last_valid_measure = peer.last_valid_stress = float('-inf')
     return enabled
 
 
@@ -97,9 +109,7 @@ def _active_peer(invitation_id: str, peer: Peer) -> bool:
     if _peers.get(invitation_id, {}).get(peer.role) is not peer:
         return False
     try:
-        role, session = access_session(invitation_id, peer.token)
-        return (role == peer.role and session["invitation"]["mode"] == "human"
-                and session["invitation"]["status"] == "in_progress")
+        return active_human_peer(invitation_id, peer.token, peer.role)
     except HTTPException:
         return False
 
@@ -148,7 +158,7 @@ def _analyze_frame(manager: SessionManager, role: str, encoded: str, received_at
     with FRAME_ROI_LOCK:
         rgb = _mesh_roi(image) if _mesh_roi is not None else None
         if rgb is None:
-            rgb = face_roi_rgb(image)
+            rgb = face_roi_rgb(image, key=manager.roi_key)
     return (manager.peek(role) if rgb is None else manager.process(role, received_at, rgb)).as_dict()
 
 
@@ -160,6 +170,12 @@ async def _frame_result(invitation_id: str, peer: Peer, epoch: int, worker: asyn
         values = await asyncio.wait_for(asyncio.shield(worker), FRAME_TIMEOUT)
         values = dict(values)
         hold_now = time.monotonic()
+        if hold_now - peer.last_diagnostic >= 10:
+            peer.last_diagnostic = hold_now
+            logging.getLogger('uvicorn.error').info(
+                'Vital pipeline: status=%s fps=%s buffered_seconds=%s queue=%d',
+                values.get('measurement_status', 'unknown'), values.get('eff_fps', 0),
+                values.get('signal_seconds', 0), len(peer.pending_frames))
         # 確定フレームでは直近有効時刻を更新し、値をそのまま表示。非確定でも
         # HOLD 秒以内なら直近の心拍値を保持(点滅防止)、それを超えたら空にする。
         if values.get("measurement_valid") is True:
@@ -203,6 +219,32 @@ async def _frame_result(invitation_id: str, peer: Peer, epoch: int, worker: asyn
     finally:
         if peer.frame_task is asyncio.current_task():
             peer.frame_task = None
+            if peer.vital_consent and peer.vital_epoch == epoch:
+                _start_pending_frame(invitation_id, peer)
+
+
+def _start_pending_frame(invitation_id: str, peer: Peer) -> None:
+    """Bounded backlog absorbs tunnel jitter; old camera images are never replayed."""
+    now = time.monotonic()
+    while peer.pending_frames and now - peer.pending_frames[0][2] > MAX_FRAME_AGE:
+        peer.pending_frames.popleft()
+    if (peer.frame_task is not None or not peer.pending_frames
+            or len(_frame_workers) >= MAX_FRAME_WORKERS or peer.vital_manager is None):
+        return
+    encoded, sampled_at, _ = peer.pending_frames.popleft()
+    worker = asyncio.create_task(asyncio.to_thread(
+        _analyze_frame, peer.vital_manager, peer.role, encoded, sampled_at,
+    ))
+    _frame_workers.add(worker)
+
+    def done(completed: asyncio.Task) -> None:
+        _frame_workers.discard(completed)
+        if not completed.cancelled():
+            completed.exception()
+    worker.add_done_callback(done)
+    peer.frame_task = asyncio.create_task(_frame_result(
+        invitation_id, peer, peer.vital_epoch, worker,
+    ))
 
 
 async def _vital_message(invitation_id: str, peer: Peer, msg: dict) -> None:
@@ -231,6 +273,25 @@ async def _vital_message(invitation_id: str, peer: Peer, msg: dict) -> None:
     if not isinstance(encoded, str) or not 1 <= len(encoded) <= MAX_FRAME_BASE64:
         raise HTTPException(413, "計測画像が大きすぎるか、形式が正しくありません。")
     now = time.monotonic()
+    captured = msg.get('captured_at')
+    if captured is not None:
+        if (isinstance(captured, bool) or not isinstance(captured, (int, float))
+                or not math.isfinite(captured) or captured < 0):
+            raise HTTPException(422, '計測画像の撮影時刻が不正です。')
+        # The clock is relative to this browser. Bound its speed against server
+        # time while allowing up to 500ms of frames to arrive as one burst.
+        offset = peer.capture_offset if peer.capture_offset is not None else now - captured
+        sampled_at = captured + offset
+        if (sampled_at > now + 0.5 or sampled_at < now - MAX_FRAME_AGE
+                or (peer.last_capture is not None and captured - peer.last_capture < 1 / MAX_FRAME_FPS - 1e-6)):
+            return
+        peer.capture_offset = offset
+        peer.last_capture = captured
+        if len(peer.pending_frames) >= MAX_PENDING_FRAMES:
+            peer.pending_frames.popleft()
+        peer.pending_frames.append((encoded, sampled_at, now))
+        _start_pending_frame(invitation_id, peer)
+        return
     # Drop excess frames rather than queueing old camera images or disconnecting
     # the participant's call. No more than one frame is outstanding per peer.
     if now - peer.last_frame < 1 / MAX_FRAME_FPS or peer.frame_task is not None or len(_frame_workers) >= MAX_FRAME_WORKERS:
@@ -350,10 +411,10 @@ async def human_interview(ws: WebSocket, invitation_id: str) -> None:
             if _peers.get(invitation_id, {}).get(role) is not peer:
                 break
             try:
-                _, current = access_session(invitation_id, token)
                 if msg.get("type") in ("vital_consent", "frame"):
                     await _vital_message(invitation_id, peer, msg)
                     continue
+                _, current = access_session(invitation_id, token)
                 if msg.get("type") == "ping":
                     await _state(invitation_id, peer)
                     continue

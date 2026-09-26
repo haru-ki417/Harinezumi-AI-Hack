@@ -26,6 +26,7 @@ export default function InterviewJoinPage() {
   const router = useRouter();
   const device = useHiringDevices();
   const [code, setCode] = useState('');
+  const [linkEntry, setLinkEntry] = useState<boolean | null>(null);
   const [confirmedCode, setConfirmedCode] = useState('');
   const [lookup, setLookup] = useState<InvitationLookup | null>(null);
   const [name, setName] = useState('');
@@ -61,8 +62,10 @@ export default function InterviewJoinPage() {
   }, []);
 
   useEffect(() => {
-    const initial = new URLSearchParams(window.location.search).get('code');
-    if (initial) void check(initial);
+    const params = new URLSearchParams(window.location.search);
+    const fromLink = params.has('code');
+    setLinkEntry(fromLink);
+    if (fromLink) void check(params.get('code') || '');
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => { invalidateLookup(); window.clearInterval(timer); };
   }, [check, invalidateLookup]);
@@ -113,8 +116,8 @@ export default function InterviewJoinPage() {
       <Link className={entry.secondary} href="/company">企業の方はこちら</Link>
     </header>
     <p className={entry.step}>就活生の方 · 面接への参加</p>
-    <h1 className={entry.title}>招待コードを入力</h1>
-    <p className={entry.description}>企業から届いた招待コードを入力してください。招待URLから開いた場合は、面接内容が自動で表示されます。</p>
+    <h1 className={entry.title}>{linkEntry === false ? '招待コードを入力' : '面接への参加準備'}</h1>
+    <p className={entry.description}>{linkEntry === false ? '企業から届いた招待コードを入力してください。' : '招待された面接内容を確認し、カメラ・マイクとお名前を準備してください。'}</p>
     <ol className={joinStyles.steps} aria-label="参加までの流れ">
       <li aria-current={!lookup ? 'step' : undefined} data-done={Boolean(lookup)}><span>1</span>招待確認</li>
       <li aria-current={lookup ? 'step' : undefined}><span>2</span>参加準備</li>
@@ -122,7 +125,7 @@ export default function InterviewJoinPage() {
     </ol>
     <noscript><p className={styles.error}>面接に参加するには、ブラウザーでJavaScriptを有効にしてください。</p></noscript>
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    <section className={entry.card + ' ' + joinStyles.card} aria-label="招待コードの確認">
+    {linkEntry === false && <section className={entry.card + ' ' + joinStyles.card} aria-label="招待コードの確認">
       <form className={styles.form} onSubmit={event => { event.preventDefault(); void check(code); }}>
         <label className={styles.field}>招待コード
           <input className={styles.input + ' ' + joinStyles.code} value={code} onChange={event => editCode(event.target.value)} required maxLength={2048} disabled={joining} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} placeholder="届いた招待コードを入力" />
@@ -131,7 +134,12 @@ export default function InterviewJoinPage() {
         <button className={styles.primary} disabled={checking || joining || !code.trim()}>{checking ? '確認中…' : '面接を確認'}</button>
       </form>
       {lookup && <p className={joinStyles.confirmed} role="status">招待を確認しました。下の面接内容を確認して、参加の準備を進めてください。</p>}
-    </section>
+    </section>}
+    {linkEntry && checking && <p role="status" className={styles.notice}>招待された面接を読み込んでいます…</p>}
+    {linkEntry && error && !lookup && <div className={styles.row}>
+      <button className={styles.primary} disabled={checking} onClick={() => void check(code)}>もう一度読み込む</button>
+      <a className={entry.secondary} href="/interviews/join">コードで参加する</a>
+    </div>}
     {lookup && <section className={entry.card + ' ' + joinStyles.card} aria-label="面接内容と参加準備">
       <div className={styles.row}><span className={styles.badge}>{modeLabel(lookup.mode)}</span><span className={styles.muted}>約 {lookup.duration_minutes} 分</span></div>
       <h2 className={joinStyles.interviewTitle}>{lookup.title}</h2>

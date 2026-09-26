@@ -614,6 +614,28 @@ test('招待参加の改善: 全角コードと区切り文字から確認して
   expect(errors).toEqual([]);
 });
 
+test('招待URLからはコード入力と確認ボタンを省いて参加準備を表示する', async ({ page, request }) => {
+  const company = await account(request);
+  const invitation = await invite(request, company.token, 'human');
+  await page.goto(`/interviews/join?code=${invitation.code}`);
+  await expect(page.getByRole('heading', { name: '面接への参加準備', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: '面接内容と参加準備' })).toBeVisible();
+  await expect(page.getByLabel('招待コード', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '面接を確認', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('お名前', { exact: true })).toBeVisible();
+  expect((await post(request, '/join/lookup', { code: invitation.code })).status).toBe('invited');
+});
+
+test('無効な招待URLからは再読み込みかコード参加を選べる', async ({ page }) => {
+  await page.goto('/interviews/join?code=INVALID');
+  await expect(page.getByRole('main').getByRole('alert')).toBeVisible();
+  await expect(page.getByLabel('招待コード', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '面接を確認', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'もう一度読み込む', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'コードで参加する', exact: true }).click();
+  await expect(page.getByLabel('招待コード', { exact: true })).toBeVisible();
+});
+
 test('招待参加の改善: 招待URL全体を貼り付けて面接を確認できる', async ({ page, request }) => {
   voiceCompany ??= account(request);
   const company = await voiceCompany;
@@ -714,6 +736,7 @@ test('対人面接で心拍数とストレス推移を表示し、共有停止�
   let socket: WebSocketRoute | undefined;
   let sharing = false;
   let frames = 0;
+  let capturedAt = -1;
   const state = () => socket?.send(JSON.stringify({ type: 'state', session, peers: [
     { client_id: 'interviewer', role: 'interviewer', name: '面接官', vital_consent: sharing },
     { client_id: 'candidate', role: 'candidate', name: '応募者テスト', vital_consent: true },
@@ -733,7 +756,12 @@ test('対人面接で心拍数とストレス推移を表示し、共有停止�
         if (!sharing) ws.send(JSON.stringify({ type: 'vitals_clear', client_id: 'interviewer', role: 'interviewer' }));
         state();
       }
-      if (message.type === 'frame') { expect(sharing).toBe(true); frames++; }
+      if (message.type === 'frame') {
+        expect(sharing).toBe(true);
+        expect(message.captured_at).toBeGreaterThan(capturedAt);
+        capturedAt = message.captured_at;
+        frames++;
+      }
     });
   });
   await page.addInitScript(token => sessionStorage.setItem('hiring_employer_token', token), company.token);
@@ -747,6 +775,14 @@ test('対人面接で心拍数とストレス推移を表示し、共有停止�
   await expect.poll(() => page.locator('video').evaluateAll(videos => videos.some(video => ((video as HTMLVideoElement).srcObject as MediaStream | null)?.getVideoTracks().some(track => track.readyState === 'live')))).toBe(true);
   await consent.check();
   await expect.poll(() => frames).toBeGreaterThan(0);
+  socket?.send(JSON.stringify({ type: 'vitals', client_id: 'interviewer', vitals: {
+    current_bpm: 0, measurement_valid: false, stress_valid: false, measurement_status: 'no_face',
+  } }));
+  await expect(self.getByRole('status')).toContainText('顔を検出できません');
+  socket?.send(JSON.stringify({ type: 'vitals', client_id: 'interviewer', vitals: {
+    current_bpm: 72, measurement_valid: true, stress_valid: false, measurement_status: 'calibrating',
+  } }));
+  await expect(self.getByRole('status')).toContainText('ストレスの基準値を計測しています');
   sample('interviewer', 72, 24); sample('candidate', 83, 45);
   await expect(self.getByLabel('心拍数', { exact: true })).toContainText('72');
   await expect(other.getByLabel('心拍数', { exact: true })).toContainText('83');
@@ -758,6 +794,20 @@ test('対人面接で心拍数とストレス推移を表示し、共有停止�
   await expect(chart).not.toHaveAttribute('d', previous!);
   await expect(page.getByRole('img', { name: '参加者のストレス推移', exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/human-interview-vitals.png', fullPage: true });
+  socket?.send(JSON.stringify({ type: 'vitals', client_id: 'interviewer', vitals: {
+    current_bpm: 0, stress: 0, measurement_valid: false, stress_valid: false,
+    display_bpm: 81, display_stress: 38, display_confidence: 0.05, display_source: 'heart_rate', display_fresh: true,
+  } }));
+  await expect(self.getByLabel('心拍数', { exact: true })).toContainText('81');
+  await expect(self.getByRole('meter', { name: 'ストレス', exact: true })).toHaveAttribute('aria-valuenow', '38');
+  await expect(self).toContainText('信頼度 5%');
+  await expect(self).toContainText('心拍変化による参考値');
+  socket?.send(JSON.stringify({ type: 'vitals', client_id: 'interviewer', vitals: {
+    current_bpm: 0, stress: 0, measurement_valid: false, stress_valid: false, display_fresh: false, measurement_status: 'no_face',
+  } }));
+  await expect(self.getByLabel('心拍数', { exact: true })).toContainText('81');
+  await expect(self.getByRole('meter', { name: 'ストレス', exact: true })).toHaveAttribute('aria-valuenow', '38');
+  await expect(self.getByRole('status')).toContainText('直近の推定値');
   await consent.uncheck();
   await expect.poll(() => sharing).toBe(false);
   sample('interviewer', 120, 90); // A delayed packet must not revive withdrawn measurements.
@@ -771,7 +821,8 @@ test('対人面接で心拍数とストレス推移を表示し、共有停止�
   await page.locator('video').evaluateAll(videos => videos.forEach(video => {
     ((video as HTMLVideoElement).srcObject as MediaStream | null)?.getVideoTracks().forEach(track => track.stop());
   }));
-  await expect(consent).not.toBeChecked();
+  // Camera loss pauses measurements while preserving the user's consent.
+  await expect(consent).toBeChecked();
   await expect.poll(() => sharing).toBe(false);
   await expect(self.getByLabel('心拍数', { exact: true })).toContainText('--');
   socket?.close();

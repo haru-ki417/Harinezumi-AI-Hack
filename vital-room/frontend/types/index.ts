@@ -16,6 +16,13 @@ export interface Vitals {
   eff_fps?: number;
   measurement_valid?: boolean;
   stress_valid?: boolean;
+  measurement_status?: 'warming_up' | 'no_face' | 'low_fps' | 'unstable_signal' | 'calibrating' | 'unstable_hrv' | 'measuring';
+  signal_seconds?: number;
+  display_bpm?: number | null;
+  display_stress?: number | null;
+  display_source?: 'none' | 'heart_rate' | 'hrv' | 'calibrated';
+  display_fresh?: boolean;
+  display_confidence?: number | null;
 }
 
 export type VitalResponse = Vitals;
