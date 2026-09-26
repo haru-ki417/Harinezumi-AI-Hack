@@ -52,8 +52,25 @@ class ClientState:
         self.stress: float = 0.0
         self.bpm_history: Deque[Tuple[float, float]] = deque()
         self.rmssd_history: Deque[Tuple[float, float]] = deque()
+        self.last_compute = float('-inf')
+        self.last_result = VitalState()
 
     def add(self, t: float, rgb: Tuple[float, float, float]) -> None:
+        if not np.isfinite([t, *rgb]).all() or min(rgb) <= 0:
+            self.buf.clear()
+            self.last_compute = float('-inf')
+            return
+        if self.buf:
+            previous = self.buf[-1]
+            if t <= previous[0]:
+                return
+            jump = np.max(np.abs(np.asarray(rgb) / np.asarray(previous[1:]) - 1))
+            if t - previous[0] > 0.35 or jump > 0.12:
+                self.buf.clear()
+                self.bpm_history.clear()
+                self.rmssd_history.clear()
+                self.bpm = self.rmssd = self.sdnn = self.stress = 0
+                self.last_compute = float('-inf')
         self.buf.append((t, rgb[0], rgb[1], rgb[2]))
         cutoff = t - self.s.window_sec
         while self.buf and self.buf[0][0] < cutoff:
@@ -61,7 +78,9 @@ class ClientState:
 
     def _baseline(self, hist: Deque[Tuple[float, float]], t: float) -> float:
         vals = [v for (tt, v) in hist if tt < t - self.s.anom_baseline_lag]
-        if len(vals) < self.s.anom_min_baseline:
+        eligible = [tt for tt, _ in hist if tt < t - self.s.anom_baseline_lag]
+        if (len(vals) < self.s.anom_min_baseline or len(eligible) < 2
+                or eligible[-1] - eligible[0] < 15):
             return 0.0
         return float(np.median(vals))
 
@@ -69,16 +88,21 @@ class ClientState:
         s = self.s
         if len(self.buf) < s.min_samples:
             return self._state(False)
+        if t - self.last_compute < 0.5:
+            return self.last_result
 
         arr = np.asarray(self.buf, dtype=float)
         times, rgb = arr[:, 0], arr[:, 1:4]
         dur = float(times[-1] - times[0])
         eff_fps = (len(times) - 1) / dur if dur > 0 else 0.0
 
-        res = compute_pulse(times, rgb)
+        recent = times >= times[-1] - 8
+        res = compute_pulse(times[recent], rgb[recent])
         if (res is None or res.bpm <= 0 or res.confidence < s.conf_min
                 or res.snr_db < s.snr_min_db or eff_fps < s.min_fps_for_hr):
-            return self._state(False, eff_fps)
+            self.last_compute = t
+            self.last_result = self._state(False, eff_fps)
+            return self.last_result
 
         # BPM 平滑化
         self.bpm = res.bpm if self.bpm <= 0 else (
@@ -86,17 +110,24 @@ class ClientState:
         )
         self.conf = res.confidence
         self.snr_db = res.snr_db
-        self.bpm_history.append((t, self.bpm))
+        if not self.bpm_history or t - self.bpm_history[-1][0] >= 1:
+            self.bpm_history.append((t, self.bpm))
         _trim(self.bpm_history, t - s.anom_history_sec)
 
         # HRV
-        hrv = hrv_from_pulse(res.pulse, res.fs)
+        long_res = compute_pulse(times, rgb) if dur >= 12 and eff_fps >= 15 else None
+        hrv = (hrv_from_pulse(long_res.pulse, long_res.fs)
+               if long_res is not None and long_res.confidence >= s.conf_min
+               and long_res.snr_db >= s.snr_min_db else None)
+        if hrv is not None and abs(hrv.mean_hr - res.bpm) > 10:
+            hrv = None
         if hrv is not None:
             self.rmssd = hrv.rmssd if self.rmssd <= 0 else (
                 (1 - s.rmssd_smooth) * self.rmssd + s.rmssd_smooth * hrv.rmssd
             )
             self.sdnn = hrv.sdnn
-            self.rmssd_history.append((t, self.rmssd))
+            if not self.rmssd_history or t - self.rmssd_history[-1][0] >= 1:
+                self.rmssd_history.append((t, self.rmssd))
             _trim(self.rmssd_history, t - s.anom_history_sec)
 
         # ストレス & 異常判定
@@ -112,7 +143,9 @@ class ClientState:
         if stress_valid and self.stress >= s.stress_anom_threshold:
             anomalous = True
 
-        return self._state(anomalous, eff_fps, measurement_valid=True, stress_valid=stress_valid)
+        self.last_compute = t
+        self.last_result = self._state(anomalous, eff_fps, measurement_valid=True, stress_valid=stress_valid)
+        return self.last_result
 
     def _state(self, anomalous: bool, eff_fps: float = 0.0, *,
                measurement_valid: bool = False, stress_valid: bool = False) -> VitalState:

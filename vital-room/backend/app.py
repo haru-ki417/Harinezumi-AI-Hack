@@ -32,6 +32,10 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from hiring import router as hiring_router
+from hiring_live import FRAME_ROI_LOCK, router as hiring_live_router
+from interview_speech import router as interview_speech_router
+
 from vital import (
     RoomManager,
     SessionManager,
@@ -63,6 +67,9 @@ manager = SessionManager(settings)
 rooms = RoomManager()
 
 app = FastAPI(title="Stealth Vital API", version="3.0.0")
+app.include_router(hiring_router)
+app.include_router(hiring_live_router)
+app.include_router(interview_speech_router)
 if chat_router is not None:
     app.include_router(chat_router)
 app.add_middleware(
@@ -94,7 +101,8 @@ class VitalResponse(BaseModel):
 
 def _vitals_for(client_id: str, image_base64: str) -> VitalState:
     img = decode_image(image_base64)
-    rgb = _roi(img)
+    with FRAME_ROI_LOCK:
+        rgb = _roi(img)
     if rgb is None:
         return manager.peek(client_id)
     return manager.process(client_id, time.monotonic(), rgb)

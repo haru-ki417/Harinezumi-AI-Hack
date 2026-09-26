@@ -54,6 +54,9 @@ def _poly_mean_rgb(bgr: np.ndarray, pts: np.ndarray) -> Optional[RGB]:
         sel = mask.astype(bool)
     if sel.sum() == 0:
         return None
+    luminance = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)[sel]
+    if np.mean((luminance < 20) | (luminance > 245)) > 0.4:
+        return None
     b = float(bgr[:, :, 0][sel].mean())
     g = float(bgr[:, :, 1][sel].mean())
     r = float(bgr[:, :, 2][sel].mean())

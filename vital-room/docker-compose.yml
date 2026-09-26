@@ -2,15 +2,23 @@
 #   docker compose up --build
 #
 # ブラウザ(ホスト)からは http://localhost:3000 を開く。
-# フロントはブラウザ経由で http://localhost:8000 のバックを叩くため、
-# コンテナ間DNSは不要(どちらもホストのlocalhostに公開)。
+# 採用面接のAPI/WebSocketはフロントから backend:8000 へ中継する。
 services:
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - STEALTH_VITAL_CORS_ORIGIN=http://localhost:3000
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_INTERVIEW_MODEL=${OPENAI_INTERVIEW_MODEL:-gpt-4o-mini}
+      - OPENAI_INTERVIEW_TTS_MODEL=${OPENAI_INTERVIEW_TTS_MODEL:-gpt-4o-mini-tts}
+      - OPENAI_INTERVIEW_TTS_VOICE=${OPENAI_INTERVIEW_TTS_VOICE:-marin}
+      - HIRING_TURN_URLS=${HIRING_TURN_URLS:-}
+      - HIRING_TURN_SECRET=${HIRING_TURN_SECRET:-}
+      - HIRING_PUBLIC_URL=${HIRING_PUBLIC_URL:-}
+    volumes:
+      - interview-records:/app/records
     restart: unless-stopped
 
   frontend:
@@ -20,3 +28,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  interview-records:

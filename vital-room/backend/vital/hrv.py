@@ -27,7 +27,7 @@ class HrvResult:
 def hrv_from_pulse(pulse: np.ndarray, fs: float, fmax: float = 4.0):
     """脈波からHRV指標を計算。ビートが少なければ None。"""
     p = np.asarray(pulse, dtype=float)
-    if p.size < int(fs * 3):
+    if fs < 15 or p.ndim != 1 or p.size < int(fs * 12) or not np.isfinite(p).all():
         return None
     p = p - p.mean()
     std = p.std()
@@ -37,20 +37,28 @@ def hrv_from_pulse(pulse: np.ndarray, fs: float, fmax: float = 4.0):
 
     min_dist = max(1, int(fs / fmax))               # 最短拍間隔(サンプル)
     peaks, _ = find_peaks(p, distance=min_dist, prominence=0.3)
-    if peaks.size < 4:
+    if peaks.size < 10:
         return None
 
-    ibi_ms = np.diff(peaks) / fs * 1000.0
-    # 生理的に妥当なIBIのみ(300-1500ms = 40-200bpm)
-    ibi_ms = ibi_ms[(ibi_ms >= 300.0) & (ibi_ms <= 1500.0)]
-    if ibi_ms.size < 3:
+    # Refine peak times instead of quantizing every beat to a camera frame.
+    refined = peaks.astype(float)
+    for i, peak in enumerate(peaks):
+        denominator = p[peak - 1] - 2 * p[peak] + p[peak + 1]
+        if abs(denominator) > 1e-9:
+            refined[i] += np.clip(0.5 * (p[peak - 1] - p[peak + 1]) / denominator, -0.5, 0.5)
+    ibi_ms = np.diff(refined) / fs * 1000.0
+    median = np.median(ibi_ms)
+    valid = (ibi_ms >= 300) & (ibi_ms <= 1500) & (np.abs(ibi_ms - median) <= 0.25 * median)
+    adjacent = valid[:-1] & valid[1:]
+    if valid.mean() < 0.9 or adjacent.sum() < 7:
         return None
 
-    rmssd = float(np.sqrt(np.mean(np.diff(ibi_ms) ** 2)))
-    sdnn = float(np.std(ibi_ms))
-    mean_hr = float(60000.0 / np.mean(ibi_ms))
+    # Never bridge across rejected beats when calculating successive differences.
+    rmssd = float(np.sqrt(np.mean(np.diff(ibi_ms)[adjacent] ** 2)))
+    sdnn = float(np.std(ibi_ms[valid]))
+    mean_hr = float(60000.0 / np.mean(ibi_ms[valid]))
     return HrvResult(mean_hr=mean_hr, rmssd=rmssd, sdnn=sdnn,
-                     n_beats=int(ibi_ms.size) + 1)
+                     n_beats=int(valid.sum()) + 1)
 
 
 def stress_score(hr: float, rmssd: float,

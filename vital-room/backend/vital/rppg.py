@@ -19,7 +19,7 @@ from scipy import signal
 FMIN = 0.7   # 42 BPM
 FMAX = 4.0   # 240 BPM
 TARGET_FPS = 30.0
-MIN_DURATION = 3.0   # 最初のBPMが出るまでの待ち時間(短いほど反応が速い)
+MIN_DURATION = 6.0   # Several complete pulse cycles are needed for a stable estimate.
 
 
 @dataclass
@@ -35,7 +35,7 @@ class PulseResult:
 def _resample_uniform(times: np.ndarray, values: np.ndarray, fps: float):
     """不等間隔時系列を一様グリッドへ線形補間。values:(N,C)。"""
     t0, t1 = float(times[0]), float(times[-1])
-    n = max(2, int(round((t1 - t0) * fps)))
+    n = max(2, int(round((t1 - t0) * fps)) + 1)
     grid = np.linspace(t0, t1, n)
     out = np.empty((n, values.shape[1]), dtype=float)
     for c in range(values.shape[1]):
@@ -88,14 +88,21 @@ def compute_pulse(times, rgb, fmin: float = FMIN, fmax: float = FMAX,
     """
     times = np.asarray(times, dtype=float)
     rgb = np.asarray(rgb, dtype=float)
-    if times.size < 8 or rgb.shape[0] != times.size:
+    if (times.ndim != 1 or times.size < 8 or rgb.shape != (times.size, 3)
+            or not np.isfinite(times).all() or not np.isfinite(rgb).all()
+            or np.any(rgb <= 0)):
         return None
     duration = float(times[-1] - times[0])
     if duration < MIN_DURATION:
         return None
 
-    _, rs = _resample_uniform(times, rgb, target_fps)
-    fs = target_fps
+    intervals = np.diff(times)
+    observed_fps = (times.size - 1) / duration
+    if (np.any(intervals <= 0) or observed_fps < max(10.0, 2.5 * fmax)
+            or intervals.max() > 0.35 or np.quantile(intervals, 0.95) > 0.15):
+        return None
+    grid, rs = _resample_uniform(times, rgb, min(target_fps, observed_fps))
+    fs = (grid.size - 1) / (grid[-1] - grid[0])
     if rs.shape[0] < 16:
         return None
 
@@ -115,6 +122,8 @@ def compute_pulse(times, rgb, fmin: float = FMIN, fmax: float = FMAX,
     band_mag = mag[band]
     band_freq = freqs[band]
     power = band_mag ** 2
+    if not np.isfinite(power).all() or power.sum() <= 1e-12:
+        return None
     peak = int(np.argmax(power))
 
     # 放物線補間でピーク周波数をサブビン精度に(BPMのガタつきを抑える)

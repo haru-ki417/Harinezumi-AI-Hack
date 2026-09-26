@@ -9,6 +9,7 @@ rPPGコア/HRV/セッションの実測テスト(合成信号)。webカメラ不
   6. ナイキスト: 1fpsでは復元不能(フレームレート要件の根拠)
 """
 import base64
+from unittest.mock import Mock, patch
 
 import cv2
 import numpy as np
@@ -35,8 +36,8 @@ def synth_rgb(bpm, fps, seconds, noise=0.5, amp=6.0, seed=0):
 def make_frame(green_value, size=(240, 320)):
     H, W = size
     img = np.full((H, W, 3), 60, dtype=np.uint8)
-    cy0, cy1 = int(H * 0.30), int(H * 0.70)
-    cx0, cx1 = int(W * 0.35), int(W * 0.65)
+    cy0, cy1 = 0, H
+    cx0, cx1 = 0, W
     img[cy0:cy1, cx0:cx1, 0] = 100
     img[cy0:cy1, cx0:cx1, 1] = int(np.clip(green_value, 0, 255))
     img[cy0:cy1, cx0:cx1, 2] = 130
@@ -75,7 +76,10 @@ def test_full_pipeline():
         green = 128 + 12.0 * np.sin(2 * np.pi * f * tt)
         b64 = make_frame(green)
         img = cv2.imdecode(np.frombuffer(base64.b64decode(b64), np.uint8), cv2.IMREAD_COLOR)
-        rgb = face_roi_rgb(img)
+        # Synthetic colors have no real face. Exercise JPEG + ROI processing
+        # with a known detector rectangle, never a production no-face fallback.
+        with patch('vital.face._CASCADE', Mock(detectMultiScale=Mock(return_value=[(0, 0, 320, 240)]))):
+            rgb = face_roi_rgb(img)
         assert rgb is not None
         last = mgr.process("c", tt, rgb)
     err = abs(last.current_bpm - true_bpm)

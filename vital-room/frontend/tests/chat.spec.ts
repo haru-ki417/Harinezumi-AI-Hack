@@ -40,7 +40,7 @@ test('面接の入室完了までチャットを接続せず、退出すると�
       if (JSON.parse(String(data)).type === 'join') pendingJoins.push(ws);
     });
   });
-  await page.goto('/');
+  await page.goto('/vital');
   const toggle = page.getByRole('button', { name: 'チャット', exact: true });
   await expect(toggle).toHaveCount(0);
   const code = page.getByLabel('ルームコード（相手と同じ値にする）');
@@ -100,7 +100,7 @@ test('上部バーがルーム情報や設定スクロールに重ならず、�
   await mockInterview(page);
   for (const width of [1366, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto('/');
+    await page.goto('/vital');
     const toggle = page.getByRole('button', { name: 'チャット', exact: true });
     await expect(toggle).toHaveCount(0);
     const toolbar = page.getByRole('banner', { name: 'ルーム操作' });
@@ -134,7 +134,7 @@ test('上部バーがルーム情報や設定スクロールに重ならず、�
 
 async function setup(page: Page, name: string, room: string) {
   await mockInterview(page);
-  await page.goto('/');
+  await page.goto('/vital');
   await expect(page.getByRole('button', { name: 'チャット', exact: true })).toHaveCount(0);
   await page.getByLabel('表示名').fill(name);
   await page.getByLabel('ルームコード（相手と同じ値にする）').fill(room);

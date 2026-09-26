@@ -22,7 +22,7 @@ async function trackDevices(page: Page, delayed = false) {
 }
 
 async function enterSetup(page: Page) {
-  await page.goto('/');
+  await page.goto('/vital');
   await expect(page.getByRole('button', { name: '同意して機器の設定へ' })).toBeDisabled();
   await page.getByLabel('表示名').fill('テスト参加者');
   await page.getByRole('checkbox').check();
