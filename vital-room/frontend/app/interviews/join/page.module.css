@@ -1,0 +1,16 @@
+.brand { text-decoration: none; }
+.card { margin: 24px 0; }
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); list-style: none; gap: 10px; padding: 0; margin: 28px 0; color: var(--text-mute); font-size: 13px; }
+.steps li { display: flex; gap: 9px; align-items: center; }
+.steps span { display: grid; place-items: center; width: 27px; height: 27px; flex-shrink: 0; border: 1px solid var(--line-2); border-radius: 50%; }
+.steps li[aria-current="step"], .steps li[data-done="true"] { color: var(--accent-cyan); }
+.steps li[aria-current="step"] span { border-color: var(--accent-cyan); background: var(--accent-soft); }
+.code { min-height: 50px; font-family: ui-monospace, monospace; font-size: 18px; letter-spacing: .08em; }
+.hint { color: var(--text-mute); font-size: 13px; line-height: 1.8; margin: 0; }
+.confirmed { color: var(--accent-cyan); font-size: 14px; line-height: 1.8; margin: 20px 0 0; }
+.interviewTitle { margin: 20px 0 12px; font-size: 24px; overflow-wrap: anywhere; }
+.dates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
+.dates dt { font-size: 12px; color: var(--text-mute); margin-bottom: 6px; }
+.dates dd { margin: 0; color: var(--text-dim); font-size: 14px; }
+.sectionHeading { margin: 28px 0 18px; font-size: 18px; }
+@media (max-width: 540px) { .steps { font-size: 12px; gap: 6px; } .steps li { gap: 6px; } .dates { grid-template-columns: 1fr; } }

@@ -5,7 +5,7 @@
   - 顔検出は OpenCV 同梱の Haar カスケード(追加DL不要)。
   - 額・両頬のサブROIを使い、目/口/髪を避ける。
   - YCrCb 肌マスクで肌ピクセルだけを平均対象にし、背景・髪・眼鏡の影響を低減。
-  - 顔が取れないフレームは画面中央にフォールバック(バッファが途切れにくい)。
+  - 顔が取れないフレームは計測せず、背景を脈波として扱わない。
 
 MediaPipe FaceMesh を使うより精度は落ちるが、依存が軽く常に動く。
 より高精度が要るときは vital/face_mesh.py(任意)に差し替え可能。
@@ -20,7 +20,7 @@ import numpy as np
 
 # 顔検出は任意。壊れた/古い OpenCV ビルド(CascadeClassifier 非搭載など)でも
 # バックエンドが必ず起動できるよう、生成失敗時は _CASCADE=None にして
-# 中央領域フォールバックだけで rPPG を動かす。
+# 顔検出不能として計測を停止する。
 _CASCADE = None
 try:
     _cascade = cv2.CascadeClassifier(
@@ -63,6 +63,9 @@ def _mean_rgb_masked(bgr_roi: np.ndarray) -> Optional[RGB]:
     """ROI内の肌ピクセルのみでRGB平均。肌が少なければ全画素で代替。"""
     if bgr_roi.size == 0:
         return None
+    luminance = cv2.cvtColor(bgr_roi, cv2.COLOR_BGR2GRAY)
+    if np.mean((luminance < 20) | (luminance > 245)) > 0.4:
+        return None
     mask = _skin_mask(bgr_roi)
     if mask.sum() >= 30:
         sel = mask.astype(bool)
@@ -78,7 +81,7 @@ def _mean_rgb_masked(bgr_roi: np.ndarray) -> Optional[RGB]:
 
 def face_roi_rgb(img: Optional[np.ndarray]) -> Optional[RGB]:
     """
-    額・両頬(肌マスク適用)の平均RGBを返す。顔が取れなければ中央領域で代替。
+    額・両頬(肌マスク適用)の平均RGBを返す。顔が取れなければ None。
     """
     if img is None or img.size == 0:
         return None
@@ -90,7 +93,7 @@ def face_roi_rgb(img: Optional[np.ndarray]) -> Optional[RGB]:
             faces = _CASCADE.detectMultiScale(
                 gray, scaleFactor=1.2, minNeighbors=5, minSize=(80, 80)
             )
-        except Exception:  # noqa: BLE001 - 検出失敗時は中央フォールバックへ
+        except Exception:  # noqa: BLE001 - 検出失敗時は計測しない
             faces = []
 
     if len(faces) > 0:
@@ -116,7 +119,4 @@ def face_roi_rgb(img: Optional[np.ndarray]) -> Optional[RGB]:
                     float(arr[:, 1].mean()),
                     float(arr[:, 2].mean()))
 
-    # フォールバック: 中央領域
-    H, W = img.shape[:2]
-    roi = img[int(H * 0.30):int(H * 0.70), int(W * 0.35):int(W * 0.65)]
-    return _mean_rgb_masked(roi)
+    return None

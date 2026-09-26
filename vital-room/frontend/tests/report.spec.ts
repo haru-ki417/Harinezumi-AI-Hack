@@ -75,7 +75,7 @@ async function interview(page: Page, source: 'ai' | 'local' | 'server' = 'ai', s
       observations: [{ participantId: 'self', questionId: 1, comment: 'Q1では心拍110 bpm、ストレス80を記録しました。' }],
     } });
   });
-  await page.goto('/');
+  await page.goto('/vital');
   await page.getByLabel('表示名').fill('面接担当');
   await page.getByRole('button', { name: '面接官', exact: true }).click();
   await page.getByRole('checkbox').check();
