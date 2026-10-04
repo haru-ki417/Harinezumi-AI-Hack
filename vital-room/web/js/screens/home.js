@@ -51,6 +51,9 @@ export function mount(root) {
         h('li', null, h('b', null, '心拍と変動を求める'), h('span', null, '周波数解析で心拍数を、拍の間隔から RMSSD・SDNN を計算します。')),
         h('li', null, h('b', null, '平常時と比べる'), h('span', null, '最初の平常値を基準に、心拍の上昇と RMSSD の低下からストレス指標を出します。')))),
     h('footer', { class: 'site-foot' },
-      h('p', null, 'Harinezumi AI Hack チームで開発した VITAL ROOM を、サーバーなしでブラウザーだけで動くように移植した Web 版です。企業向けの面接管理や AI 音声などの機能は、リポジトリのフル版（Next.js + FastAPI）で利用できます。'),
-      h('p', null, h('a', { href: 'https://github.com/haru-ki417/Harinezumi-AI-Hack', target: '_blank', rel: 'noopener' }, 'GitHub でソースを見る'))));
+      h('p', null, 'このページは、チーム「Life & Medical Hackers」で開発した VITAL ROOM（フル版：Next.js + FastAPI）をもとに、計測と面接練習をサーバーなしで動くように移植した Web 版です。企業向けの面接管理・応募者の招待・面接の集計などは、フル版の機能です。'),
+      h('p', null,
+        h('a', { href: 'https://github.com/haru-ki417/Harinezumi-AI-Hack/tree/main/vital-room', target: '_blank', rel: 'noopener' }, 'フル版（チームで開発）を見る'),
+        ' ・ ',
+        h('a', { href: 'https://github.com/haru-ki417/Harinezumi-AI-Hack/tree/main/vital-room/web', target: '_blank', rel: 'noopener' }, 'Web 版のソース'))));
 }
