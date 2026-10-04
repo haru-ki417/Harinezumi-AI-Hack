@@ -1,0 +1,52 @@
+# VITAL ROOM の Web 版（vital-room/web、ビルド不要の静的サイト）をテストして GitHub Pages で公開する。
+# 既存のフル版（frontend / backend）には影響しない。
+name: Web
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'vital-room/web/**', '.github/workflows/web.yml' ]
+  pull_request:
+    paths: [ 'vital-room/web/**' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Test (端末内ロジック)
+        working-directory: vital-room/web
+        run: node --test tests/*.test.mjs
+
+      - name: Prepare site
+        run: |
+          mkdir out
+          cp -r vital-room/web/index.html vital-room/web/manifest.webmanifest vital-room/web/sw.js \
+                vital-room/web/css vital-room/web/js vital-room/web/icons out/
+          cp out/index.html out/404.html
+          touch out/.nojekyll
+
+      # 公開用の枝（gh-pages）に、サイトのファイルだけを置く
+      - name: Deploy to gh-pages
+        if: github.event_name != 'pull_request'
+        run: |
+          cd out
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Web 版を公開（${GITHUB_SHA::7}）"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages

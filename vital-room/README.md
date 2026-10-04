@@ -3,6 +3,10 @@
 企業による対人・AI面接、応募者別の招待、根拠付きの面接集計については
 [企業向け面接の使い方](INTERVIEWS.md)を参照してください。企業画面は `/company`、応募者の参加画面は `/interviews/join` です。
 
+> **ブラウザーだけで試せる Web 版**: https://haru-ki417.github.io/Harinezumi-AI-Hack/
+> サーバー不要でスマホ・タブレット・パソコンから使えます（ひとりで計測・2人のルーム練習・AI面接練習）。
+> 信号処理と面接ロジックを JavaScript に移植したもので、詳細は [web/README.md](web/README.md) を参照してください。
+
 Webカメラ映像から **rPPG (remote photoplethysmography)** で心拍数(BPM)・
 心拍変動(HRV)・ストレスの目安をリアルタイム推定し、**全員が同意した上で**
 互いに数値を共有する双方向ルーム。面接官・就活生のどちらの役割でも使える。
